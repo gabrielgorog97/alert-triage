@@ -35,6 +35,14 @@ Kept as I worked, newest last. Each entry says what I asked, what came back, and
   Python); a broken catalog stops the run with an error instead of sending every alert to manual
   review; a threshold of 0 or less goes to manual review, because "2x threshold" would make every
   value a P1.
+- State and outbox. The assistant proposed a JSON state file with atomic writes, a `Notifier`
+  interface with a file-based outbox, and an engine that runs the README steps in order.
+  Proposals from the assistant that I reviewed:
+  - A duplicate that would now be a higher priority raises the open item's priority and pages,
+    so deduplication cannot hide a problem that got worse.
+  - Send notifications before saving state, with idempotency keys, so a crash can repeat a page but
+    not lose one (at-least-once delivery, made safe by the receiver dropping repeated keys).
+  - Duplicates do not send any notification; the count is kept in state.
 
 ## Accepted, changed, rejected
 

@@ -47,6 +47,7 @@ Every alert ends in exactly one of these:
 | `manual_review` | readable, but the rules cannot decide | ticket to the EOC triage queue |
 | `rejected` | cannot be read or validated | stored in a dead-letter file |
 | `resolved` | closes the open item | resolve note on the existing ticket |
+| `ignored` | redelivered `alert_id`, or resolved with nothing open | none |
 
 `manual_review` and `rejected` are different on purpose: "I don't know what this means" is a
 decision for a person, "I can't parse this" is broken data.
@@ -61,7 +62,9 @@ Evaluated in this order; the first rule that applies wins.
    changes nothing.
 3. **Resolved.** `status: resolved` closes the open item with the same fingerprint, if any.
 4. **Duplicate.** Fingerprint = `name + service + environment`. If an item with that fingerprint is
-   open, it is a `duplicate` until a `resolved` alert closes it.
+   open, it is a `duplicate` until a `resolved` alert closes it. A duplicate never opens a new
+   ticket, but if it would get a higher priority than the open item (for example errors grew from
+   1.5x to 3x threshold), the item's priority is raised and the new priority pages if it should.
 5. **Manual review** when any of these is true:
    - the service is not in the catalog
    - the environment is not one the catalog lists for that service
@@ -78,10 +81,15 @@ Evaluated in this order; the first rule that applies wins.
 
 Known alert types: `HighErrorRate`, `HighLatency`, `DependencyDown`, `ServiceDown`.
 
-### Notifications
+### State and notifications
 
-Tickets and pages are written to a local `outbox/` directory through a small adapter interface,
-so a real paging or ticketing integration can replace it without changing the triage logic.
+- `state/state.json` remembers processed alert ids and open items between runs. It is written to a
+  temporary file and renamed, so a crash mid-write keeps the previous state. An unreadable state
+  file stops the run, because starting empty would reopen every known problem as a new ticket.
+- Tickets, pages and rejected payloads go through a `Notifier` interface. `FileOutbox` appends them
+  to `outbox/events.jsonl`; a real paging or ticketing adapter would implement the same method.
+- Every notification has an idempotency key. Notifications are sent before state is saved, so a
+  crash in between can repeat a notification (with the same key) but never lose a page.
 
 ## Assumptions
 
