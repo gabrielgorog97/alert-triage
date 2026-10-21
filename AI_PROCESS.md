@@ -131,6 +131,13 @@ Kept as I worked, newest last. Each entry says what I asked, what came back, and
   impact, open the runbook. Earlier I had put reading the alert and the runbook before
   acknowledging; with Opsgenie, acknowledging first is what stops the escalation timer and tells
   the rest of the team someone is on it, so it moved back to step 1.
+- Broken alerts, reviewed again. I asked whether unreadable alerts are required at all; they are
+  (the exercise asks for tests for malformed alerts). Testing a broken monitor that keeps sending
+  showed a gap: each payload had different values, so each opened a new Opsgenie alert. The
+  assistant offered three options (one alert per broken monitor, only a count of dead letters, or
+  leave it as a limitation). I chose one alert per broken monitor, grouped by the readable parts
+  and the broken fields. I also decided that a broken alert whose readable part says P1/P2 still
+  pages EOC, because a format bug must not hide an outage.
 
 ## Accepted, changed, rejected
 
@@ -160,7 +167,7 @@ priority on a duplicate, because a single lower reading does not prove the probl
 
 ## Verification
 
-- 90 automated tests (`make test`) covering normal alerts, every priority, boundaries
+- 94 automated tests (`make test`) covering normal alerts, every priority, boundaries
   (exactly 2x threshold, just below it, threshold 0), malformed and unreadable input, unknown
   service / environment / alert type, duplicates and redeliveries, priority raise, resolve,
   corrupt state, missing catalog, and the CLI exit codes.

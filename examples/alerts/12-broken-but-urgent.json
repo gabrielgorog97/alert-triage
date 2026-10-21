@@ -1,0 +1,9 @@
+{
+  "alert_id": "a-1201",
+  "name": "ServiceDown",
+  "service": "checkout-api",
+  "environment": "prod",
+  "status": "firing",
+  "started_at": "5 minutes ago",
+  "description": "checkout-api synthetic check failing; the monitor sends a bad time format"
+}

@@ -19,7 +19,11 @@ LEGEND = [
     ("P3", "Prod, internal service. Alert to EOC on-call, no page."),
     ("P4", "Non-prod (staging). Alert to EOC on-call, no page."),
     ("review", "The rules cannot decide. A person looks at it; nothing is guessed."),
-    ("rejected", "Broken or incomplete data. Dead letter, plus an Opsgenie alert for EOC triage."),
+    (
+        "rejected",
+        "Broken data. Kept in the dead letter; one Opsgenie alert per broken monitor for EOC "
+        "triage. Pages if the readable part says P1/P2.",
+    ),
 ]
 
 STYLE = """
@@ -76,7 +80,7 @@ first-response checklist.</p>
 
 def _tag(r: TriageResult) -> str:
     if r.outcome == Outcome.REJECTED:
-        return "rejected"
+        return r.priority.value if r.priority else "rejected"
     if r.outcome == Outcome.MANUAL_REVIEW:
         return "review"
     return r.priority.value if r.priority else "--"

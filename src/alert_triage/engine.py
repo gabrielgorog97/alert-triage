@@ -2,9 +2,10 @@ import hashlib
 import json
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
+from pathlib import PurePath
 
 from alert_triage.checklist import build_checklist, load_checklists, rejected_checklist
-from alert_triage.models import Outcome, Priority, Service, TriageResult
+from alert_triage.models import Alert, Outcome, Priority, Service, TriageResult
 from alert_triage.outbox import Notifier
 from alert_triage.rules import (
     FLAPPING_AFTER_REOPENS,
@@ -13,7 +14,7 @@ from alert_triage.rules import (
     classify,
 )
 from alert_triage.state import StateStore
-from alert_triage.validation import InvalidAlert, parse_alert
+from alert_triage.validation import InvalidAlert, is_number, parse_alert
 
 
 def _utcnow() -> str:
@@ -46,7 +47,7 @@ class TriageEngine:
         try:
             alert = parse_alert(payload)
         except InvalidAlert as exc:
-            return self.reject(payload, exc.errors)
+            return self.reject(payload, exc.errors, exc.fields)
 
         if alert.alert_id in self.state.processed:
             return TriageResult(
@@ -69,10 +70,13 @@ class TriageEngine:
         self.state.save()
         return result
 
-    def reject(self, payload, errors: list[str]) -> TriageResult:
-        """Keep an unusable payload and open an Opsgenie alert for EOC: it may still be real."""
+    def reject(self, payload, errors: list[str], fields=()) -> TriageResult:
+        """Keep an unusable payload in the dead letter and make sure a person sees it.
+
+        Repeats from the same broken monitor share one open Opsgenie alert. If the name, service
+        and environment can still be read and would give P1/P2, EOC is paged anyway: a format
+        bug must not hide a real outage."""
         alert_id = payload.get("alert_id") if isinstance(payload, dict) else None
-        # Rejected payloads may have no usable id, so they are recognised by their content.
         digest = hashlib.sha256(
             json.dumps(payload, sort_keys=True, default=str).encode()
         ).hexdigest()[:16]
@@ -80,12 +84,14 @@ class TriageEngine:
             alert_id=str(alert_id),
             outcome=Outcome.REJECTED,
             owner=MANUAL_REVIEW_QUEUE,
+            responder=MANUAL_REVIEW_QUEUE,
             reasons=list(errors),
         )
 
-        if digest in self.state.rejected:
-            result.opsgenie_id = self.state.rejected[digest]
-            result.reasons.append(f"same payload already in Opsgenie as {result.opsgenie_id}")
+        if digest in self.state.dead_letters:
+            group = self.state.rejected[self.state.dead_letters[digest]]
+            result.opsgenie_id = group["opsgenie_id"]
+            result.reasons.append(f"same payload already received; it is in {result.opsgenie_id}")
             return result
 
         now = self.clock()
@@ -94,29 +100,78 @@ class TriageEngine:
             f"dead_letter:{digest}",
             {"received_at": now, "errors": errors, "payload": payload},
         )
+        key = _rejected_key(payload, fields)
+        self.state.dead_letters[digest] = key
+
+        group = self.state.rejected.get(key)
+        if group:
+            group["count"] += 1
+            result.opsgenie_id = group["opsgenie_id"]
+            result.reasons.append(
+                f"same broken alert already open as {group['opsgenie_id']}, "
+                f"seen {group['count']} times"
+            )
+            self.state.save()
+            return result
+
+        urgent = self._readable_part(payload)
+        if urgent:
+            result.priority = urgent.priority
+            result.page = True
+            result.responder = urgent.responder
+            result.owner = urgent.owner
+            result.escalation = urgent.escalation
+            result.ack_timeout_minutes = urgent.ack_timeout_minutes
+            result.runbook = urgent.runbook
+            result.impact = urgent.impact
+            result.reasons.insert(
+                0,
+                f"data incomplete, but name, service and environment say {urgent.priority.value}: "
+                "paging EOC",
+            )
         opsgenie_id = self.state.new_opsgenie_id()
         result.opsgenie_id = opsgenie_id
-        result.checklist = rejected_checklist(self.checklists, opsgenie_id)
+        result.checklist = rejected_checklist(self.checklists, result, opsgenie_id)
         self.notifier.send(
             "create_alert",
-            f"create_alert:rejected:{digest}",
+            f"create_alert:{key}:{opsgenie_id}",
             {
                 "opsgenie_id": opsgenie_id,
-                "alias": f"rejected:{digest}",
+                "alias": key,
                 "created_at": now,
-                "responders": [MANUAL_REVIEW_QUEUE],
-                "page": False,
-                "outcome": result.outcome.value,
-                "owner": result.owner,
+                "responders": [result.responder],
+                "page": result.page,
+                "tags": ["data-incomplete"],
                 "errors": errors,
                 "payload": payload,
-                "checklist": result.checklist,
+                **_summary(result),
             },
         )
-        self.state.rejected[digest] = opsgenie_id
+        self.state.rejected[key] = {"opsgenie_id": opsgenie_id, "count": 1}
         self.state.save()
         result.reasons.append(f"opened {opsgenie_id}")
         return result
+
+    def _readable_part(self, payload) -> TriageResult | None:
+        """Classify what can still be read; return it only if it would page."""
+        if not isinstance(payload, dict) or payload.get("status") == "resolved":
+            return None
+        texts = [payload.get(name) for name in ("name", "service", "environment")]
+        if not all(isinstance(text, str) and text.strip() for text in texts):
+            return None
+        name, service, environment = (text.strip() for text in texts)
+        alert = Alert(
+            alert_id=str(payload.get("alert_id")),
+            name=name,
+            service=service,
+            environment=environment,
+            status="firing",
+            started_at=None,
+            value=payload.get("value") if is_number(payload.get("value")) else None,
+            threshold=payload.get("threshold") if is_number(payload.get("threshold")) else None,
+        )
+        result = classify(alert, self.catalog)
+        return result if result.page else None
 
     def _open(self, alert) -> TriageResult:
         result = classify(alert, self.catalog)
@@ -251,6 +306,18 @@ class TriageEngine:
             opsgenie_id=item["opsgenie_id"],
             reasons=[f"closed {item['opsgenie_id']} after {item['count']} alerts"],
         )
+
+
+def _rejected_key(payload, fields) -> str:
+    """What identifies a broken monitor: the parts that can be read, and which fields are wrong."""
+    if isinstance(payload, dict) and "source" in payload:
+        parts = [PurePath(str(payload["source"])).name]
+    elif isinstance(payload, dict):
+        values = [payload.get(name) for name in ("name", "service", "environment")]
+        parts = [v.strip() if isinstance(v, str) and v.strip() else "?" for v in values]
+    else:
+        parts = ["?"]
+    return "rejected|" + "|".join(parts) + "|" + ",".join(sorted(set(fields)))
 
 
 def _summary(result: TriageResult) -> dict:

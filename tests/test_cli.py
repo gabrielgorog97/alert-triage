@@ -41,12 +41,15 @@ def test_examples_end_to_end(tmp_path, capsys):
     assert by_id["a-1005"]["opsgenie_id"] == "OG-0009"
     assert "closing OG-0001" in by_id["a-1005"]["reasons"][-1]
     rejected = [r for r in report["results"] if r["outcome"] == "rejected"]
-    assert [(r["opsgenie_id"], r["owner"]) for r in rejected] == [
-        ("OG-0007", "eoc-triage"),
-        ("OG-0008", "eoc-triage"),
+    assert [(r["opsgenie_id"], r["owner"], r["page"]) for r in rejected] == [
+        ("OG-0007", "eoc-triage", False),
+        ("OG-0008", "eoc-triage", False),
+        ("OG-0010", "payments-team", True),
+        ("OG-0007", "eoc-triage", False),
     ]
-    assert report["summary"]["rejected"] == 2
-    assert report["summary"]["needs_review"] == 3
+    assert rejected[2]["priority"] == "P1"
+    assert report["summary"]["rejected"] == 4
+    assert report["summary"]["needs_review"] == 5
 
 
 def test_second_run_on_same_input_creates_no_new_work(tmp_path, capsys):
@@ -61,7 +64,7 @@ def test_second_run_on_same_input_creates_no_new_work(tmp_path, capsys):
     rerun_events = (tmp_path / "outbox" / "events.jsonl").read_text().splitlines()
     assert rerun_events == events
     rejected = [r for r in report["results"] if r["outcome"] == "rejected"]
-    assert all("already in Opsgenie" in r["reasons"][-1] for r in rejected)
+    assert all("same payload already received" in r["reasons"][-1] for r in rejected)
 
 
 def test_default_output_is_one_line_per_alert(tmp_path, capsys):

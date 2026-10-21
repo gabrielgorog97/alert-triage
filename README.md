@@ -91,7 +91,7 @@ docker run --rm -v "$PWD/examples:/work/examples:ro" alert-triage:local \
 
 `examples/services.yaml` defines three made-up services: `checkout-api` and `search-api`
 (customer-facing, prod and staging) and `report-builder` (internal, prod only).
-`examples/alerts/` has eleven files processed in order with one shared state:
+`examples/alerts/` has thirteen files processed in order with one shared state:
 
 | File | Alert | Result | Rule that produced it |
 |---|---|---|---|
@@ -108,30 +108,34 @@ docker run --rm -v "$PWD/examples:/work/examples:ro" alert-triage:local \
 | `09-not-json` | truncated file | **rejected**, OG-0008 to `eoc-triage` + dead letter | file cannot be parsed; the raw text goes in the Opsgenie alert and the rest of the batch continues |
 | `10-resolved` | resolved, checkout-api prod | **resolved**, OG-0001 closed | closes the open alert with the same fingerprint |
 | `11-back-again` | HighErrorRate, checkout-api prod, 0.09 | **reopened**: OG-0009, linked to OG-0001, pages | the same problem came back within 30 minutes of closing; Opsgenie cannot reopen a closed alert, so the new one points to the old one |
+| `12-broken-but-urgent` | ServiceDown, checkout-api prod, time "5 minutes ago" | **rejected** but **P1**, OG-0010 pages EOC + dead letter | the time is invalid, but name, service and environment are readable and say P1: a format bug must not hide an outage |
+| `13-malformed-again` | same broken monitor as `08`, other values | **rejected**, counted on OG-0007, no new alert | same readable parts and same broken fields as `08`: one open alert per broken monitor |
 
-Exit code is 4, because three alerts need a person. Running `make demo`'s command a second time
+Exit code is 4, because five alerts need a person. Running `make demo`'s command a second time
 on the same state creates no new Opsgenie alerts or pages: every alert is a redelivery, and the
-two broken files are recognised by their content and point to their existing Opsgenie alerts.
+broken payloads are recognised by their content and point to their existing Opsgenie alerts.
 
 Default output, one line per alert:
 
 ```text
-PRI  ALERT              SERVICE/ENV          TYPE            RESULT         OPSGENIE  PAGE  WHY
-P2   a-1001             checkout-api/prod    HighErrorRate   triaged        OG-0001   yes   prod, customer-facing, HighErrorRate above threshold
-P2   a-2001             search-api/prod      HighLatency     triaged        OG-0002   yes   prod, customer-facing, HighLatency above threshold
-P1   a-3001             checkout-api/prod    DependencyDown  triaged        OG-0003   yes   prod, customer-facing, DependencyDown
---   a-1001             checkout-api/prod    HighErrorRate   ignored                        alert_id already processed (redelivery)
-P2   a-1002             checkout-api/prod    HighErrorRate   duplicate      OG-0001         already open as OG-0001, seen 2 times
-P1   a-1003             checkout-api/prod    HighErrorRate   duplicate      OG-0001   yes   already open as OG-0001, seen 3 times; priority raised P2 -> P1
-P3   a-5001             report-builder/prod  ServiceDown     triaged        OG-0004         prod, internal service (not customer-facing)
-P4   a-6001             search-api/staging   ServiceDown     triaged        OG-0005         non-prod environment 'staging'
---   a-7001             loyalty-points/prod  HighErrorRate   manual_review  OG-0006         service 'loyalty-points' is not in the catalog
---   08-malformed.json                                       rejected       OG-0007         'service' is required and must be a non-empty string (+2 more)
---   09-not-json.json                                        rejected       OG-0008         alert file is not valid JSON: Expecting ',' delimiter: line 2 column 1 (char 70)
---   a-1004             checkout-api/prod    HighErrorRate   resolved       OG-0001         closed OG-0001 after 3 alerts
-P2   a-1005             checkout-api/prod    HighErrorRate   reopened       OG-0009   yes   prod, customer-facing, HighErrorRate above threshold; back within 30 min of closing OG-0001, linked to it (reopen 1)
+PRI  ALERT                      SERVICE/ENV          TYPE            RESULT         OPSGENIE  PAGE  WHY
+P2   a-1001                     checkout-api/prod    HighErrorRate   triaged        OG-0001   yes   prod, customer-facing, HighErrorRate above threshold
+P2   a-2001                     search-api/prod      HighLatency     triaged        OG-0002   yes   prod, customer-facing, HighLatency above threshold
+P1   a-3001                     checkout-api/prod    DependencyDown  triaged        OG-0003   yes   prod, customer-facing, DependencyDown
+--   a-1001                     checkout-api/prod    HighErrorRate   ignored                        alert_id already processed (redelivery)
+P2   a-1002                     checkout-api/prod    HighErrorRate   duplicate      OG-0001         already open as OG-0001, seen 2 times
+P1   a-1003                     checkout-api/prod    HighErrorRate   duplicate      OG-0001   yes   already open as OG-0001, seen 3 times; priority raised P2 -> P1
+P3   a-5001                     report-builder/prod  ServiceDown     triaged        OG-0004         prod, internal service (not customer-facing)
+P4   a-6001                     search-api/staging   ServiceDown     triaged        OG-0005         non-prod environment 'staging'
+--   a-7001                     loyalty-points/prod  HighErrorRate   manual_review  OG-0006         service 'loyalty-points' is not in the catalog
+--   08-malformed.json                                               rejected       OG-0007         'service' is required and must be a non-empty string (+2 more)
+--   09-not-json.json                                                rejected       OG-0008         alert file is not valid JSON: Expecting ',' delimiter: line 2 column 1 (char 70)
+--   a-1004                     checkout-api/prod    HighErrorRate   resolved       OG-0001         closed OG-0001 after 3 alerts
+P2   a-1005                     checkout-api/prod    HighErrorRate   reopened       OG-0009   yes   prod, customer-facing, HighErrorRate above threshold; back within 30 min of closing OG-0001, linked to it (reopen 1)
+P1   12-broken-but-urgent.json                                       rejected       OG-0010   yes   data incomplete, but name, service and environment say P1: paging EOC (+1 more)
+--   13-malformed-again.json                                         rejected       OG-0007         same broken alert already open as OG-0007, seen 2 times: 'service' is required and must be a non-empty string
 
-Summary: 13 alerts: 2 duplicate, 1 ignored, 1 manual_review, 2 rejected, 1 reopened, 1 resolved, 5 triaged. Needs human review: 3.
+Summary: 15 alerts: 2 duplicate, 1 ignored, 1 manual_review, 4 rejected, 1 reopened, 1 resolved, 5 triaged. Needs human review: 5.
 ```
 
 With `--details`, each triaged or manual-review alert also shows impact, escalation and its
@@ -225,7 +229,7 @@ Every alert ends in exactly one of these:
 | `triaged` | priority, owner and checklist decided | Opsgenie alert; it pages for P1/P2 |
 | `duplicate` | same alert already open | none, the open alert's counter goes up (or its priority is raised and it pages) |
 | `manual_review` | readable, but the rules cannot decide | Opsgenie alert to `eoc-triage`, no page |
-| `rejected` | cannot be read or validated | Opsgenie alert to `eoc-triage` with the raw payload, plus the dead letter |
+| `rejected` | cannot be read or validated | raw payload kept in the dead letter; one Opsgenie alert per broken monitor to `eoc-triage`, or a page to EOC if the readable part says P1/P2 |
 | `resolved` | monitoring reports recovery | the open Opsgenie alert is closed |
 | `reopened` | same problem back within 30 minutes of closing | new Opsgenie alert linked to the closed one; pages again for P1/P2 |
 | `ignored` | redelivered `alert_id`, or resolved with nothing open | none |
@@ -240,9 +244,17 @@ Evaluated in this order; the first rule that applies wins. Code: `src/alert_tria
 `engine.py`.
 
 1. **Validation.** `alert_id`, `name`, `service`, `environment`, `status` (`firing` or `resolved`)
-   and `started_at` (ISO 8601) are required and must have the right types. Otherwise: `rejected`,
-   with an Opsgenie alert to `eoc-triage` holding the raw payload. The same broken payload arriving
-   again is recognised by a hash of its content and points to the existing Opsgenie alert.
+   and `started_at` (ISO 8601) are required and must have the right types. Otherwise: `rejected`.
+   - The raw payload is kept unchanged in the **dead letter** (a separate store for messages that
+     could not be processed), so nothing is lost and it can be replayed once the cause is fixed.
+   - A person is told through an Opsgenie alert to `eoc-triage`, with the raw payload and the
+     errors. Repeats from the same broken monitor share that one alert: they are recognised by
+     the parts that can be read (name, service, environment) plus which fields are wrong, not by
+     the values, which change every time. The exact same payload arriving twice is recognised by
+     a hash of its content and only points to the existing alert.
+   - If name, service and environment can be read and the priority rules would give P1/P2 (for
+     example `ServiceDown` on a customer-facing prod service with a bad time format), EOC is
+     paged as for that priority, tagged `data-incomplete`. A format bug must not hide an outage.
 2. **Redelivery.** An `alert_id` that was already processed is ignored, so a retried delivery
    changes nothing.
 3. **Resolved.** `status: resolved` closes the open Opsgenie alert with the same fingerprint, if any.
@@ -328,8 +340,8 @@ producing an incomplete checklist.
   notifies the on-call engineer (`page: true` in the payload).
 - Every call has an idempotency key: `create_alert:<fingerprint>:<opsgenie id>`,
   `update_priority:<alert_id>`, `close_alert:<opsgenie id>`, and for rejected payloads, which may
-  have no usable id, `dead_letter:<hash>` and `create_alert:rejected:<hash>` (hash of the payload
-  content). Calls are made before state is saved, so a crash in between can repeat a call with
+  have no usable id, `dead_letter:<hash of the payload>` and
+  `create_alert:rejected|<readable parts>|<broken fields>:<opsgenie id>`. Calls are made before state is saved, so a crash in between can repeat a call with
   the same key, but never lose a page.
 
 ### Code layout
@@ -352,13 +364,13 @@ producing an incomplete checklist.
 make test
 ```
 
-90 tests, no network, each with a temporary state and outbox:
+94 tests, no network, each with a temporary state and outbox:
 
 | Area | File | Examples |
 |---|---|---|
 | Normal alerts | `test_rules.py`, `test_engine.py` | every priority, owner, escalation, impact statement |
 | Boundaries | `test_rules.py` | exactly 2x threshold is P1, just below stays P2, threshold 0 |
-| Malformed | `test_validation.py`, `test_engine.py`, `test_cli.py` | missing fields, wrong types, booleans as numbers, bad time, not JSON, not an object; each gets one Opsgenie alert for EOC triage, also across runs |
+| Malformed | `test_validation.py`, `test_engine.py`, `test_cli.py` | missing fields, wrong types, booleans as numbers, bad time, not JSON, not an object; one Opsgenie alert per broken monitor, also across runs; a broken alert that reads as P1 still pages |
 | Duplicate | `test_engine.py`, `test_cli.py` | repeats, redelivery, priority raise, re-running the whole batch |
 | Flapping | `test_engine.py` | back within 30 min is linked to the closed alert, unlinked after, `flapping` tag on the 3rd return, survives restart |
 | Ambiguous | `test_rules.py`, `test_engine.py` | unknown service, environment, alert type, missing numbers; repeated ambiguous alert gives one Opsgenie alert |
@@ -445,6 +457,10 @@ so "why did this page at 3 a.m.?" has an exact answer.
 - **Re-notifying on a priority raise is not verified.** When a duplicate raises an open alert to
   P1, the payload asks for a page. Whether Opsgenie notifies again on a priority change depends on
   its notification rules; a real client must make sure it does.
+- **Broken-monitor alerts stay open in local state.** The program cannot see when a person
+  closes that Opsgenie alert, so later payloads from the same broken monitor keep counting on it.
+  With the real Opsgenie alias, a closed alert would get a new one instead. A paged broken alert
+  is also not linked to a normal alert for the same service and problem.
 - **Priority only goes up.** A lower repeat does not lower the priority; a person decides that.
 - **Unbounded memory.** The processed-id list grows forever; it needs a retention period.
 - **Recovery closes the Opsgenie alert automatically.** When monitoring sends `resolved`, the

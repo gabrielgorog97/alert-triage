@@ -86,5 +86,17 @@ def build_checklist(templates: dict, result: TriageResult, alert: Alert, opsgeni
     return [step.format(**values) for step in steps]
 
 
-def rejected_checklist(templates: dict, opsgenie_id: str) -> list:
-    return [step.format(opsgenie_id=opsgenie_id) for step in templates["rejected"]]
+def rejected_checklist(templates: dict, result: TriageResult, opsgenie_id: str) -> list:
+    acknowledge = templates["acknowledge"]
+    if result.page:
+        acknowledge += " " + templates["escalate"]["ack"]
+    steps = [acknowledge, *templates["rejected"]]
+    if result.runbook:
+        steps.insert(2, templates["runbook"])
+    values = {
+        "opsgenie_id": opsgenie_id,
+        "runbook": result.runbook,
+        "escalation": result.escalation,
+        "ack_timeout_minutes": result.ack_timeout_minutes,
+    }
+    return [step.format(**values) for step in steps]

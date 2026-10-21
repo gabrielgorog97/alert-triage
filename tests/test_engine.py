@@ -182,7 +182,7 @@ def test_malformed_alert_is_kept_and_sent_to_eoc_triage(engine, outbox):
     created = outbox.events[1]
     assert (created["responders"], created["page"]) == (["eoc-triage"], False)
     assert created["payload"]["alert_id"] == "bad-1"
-    assert created["checklist"][0].startswith("Do not assume it is harmless")
+    assert created["checklist"][1].startswith("Do not assume it is harmless")
     assert result.opsgenie_id == "OG-0001"
 
 
@@ -190,15 +190,52 @@ def test_non_object_payload_goes_to_dead_letter(engine, outbox):
     assert engine.process(["not", "an", "object"]).outcome == Outcome.REJECTED
 
 
-def test_rejected_payloads_are_told_apart_by_content(engine, outbox):
+def test_rejected_payloads_are_told_apart_by_what_is_broken(engine, outbox):
     first = engine.process({"name": "HighErrorRate"})
     second = engine.process({"name": "HighLatency"})
     repeat = engine.process({"name": "HighErrorRate"})
 
     assert (first.opsgenie_id, second.opsgenie_id) == ("OG-0001", "OG-0002")
     assert repeat.opsgenie_id == "OG-0001"
-    assert "same payload already in Opsgenie as OG-0001" in repeat.reasons
+    assert "same payload already received; it is in OG-0001" in repeat.reasons
     assert outbox.actions() == ["dead_letter", "create_alert"] * 2
+
+
+def test_same_broken_monitor_shares_one_alert(engine, outbox):
+    broken = {"name": "HighErrorRate", "environment": "prod", "status": "firing"}
+    results = [
+        engine.process({**broken, "alert_id": f"b-{i}", "started_at": f"{i} min ago"})
+        for i in range(3)
+    ]
+    assert {r.opsgenie_id for r in results} == {"OG-0001"}
+    assert "seen 3 times" in results[-1].reasons[-1]
+    assert outbox.actions() == ["dead_letter", "create_alert", "dead_letter", "dead_letter"]
+
+
+def test_broken_alert_that_reads_as_p1_still_pages_eoc(engine, outbox, alert_data):
+    result = engine.process({**alert_data, "name": "ServiceDown", "started_at": "5 minutes ago"})
+    assert result.outcome == Outcome.REJECTED
+    assert (result.priority, result.page) == (Priority.P1, True)
+    assert result.reasons[0].startswith("data incomplete, but name, service and environment say P1")
+    created = outbox.events[1]
+    assert (created["responders"], created["page"]) == (["eoc-oncall"], True)
+    assert created["escalation"] == "payments-oncall-lead"
+    assert created["checklist"][0].endswith(
+        "Do it within 5 minutes: after that Opsgenie escalates it automatically to "
+        "payments-oncall-lead."
+    )
+
+
+def test_broken_alert_that_reads_as_p3_does_not_page(engine, outbox, alert_data):
+    result = engine.process(
+        {**alert_data, "service": "report-builder", "name": "ServiceDown", "started_at": "now"}
+    )
+    assert (result.priority, result.page, result.responder) == (None, False, "eoc-triage")
+
+
+def test_broken_resolved_alert_does_not_page(engine, outbox, alert_data):
+    payload = {**alert_data, "name": "ServiceDown", "status": "resolved", "started_at": "now"}
+    assert engine.process(payload).page is False
 
 
 def test_rejected_payload_is_remembered_across_runs(catalog, tmp_path, outbox):

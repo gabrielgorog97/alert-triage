@@ -21,8 +21,10 @@ class StateStore:
         self.open: dict[str, dict] = {}
         # Recently closed items, so a problem that comes back soon is linked to its last alert.
         self.recent: dict[str, dict] = {}
-        # Content hash of each unreadable payload -> the Opsgenie alert opened for it.
-        self.rejected: dict[str, str] = {}
+        # One open Opsgenie alert per broken monitor (rejected key -> alert id and count), and the
+        # content hash of every payload already kept in the dead letter -> its rejected key.
+        self.rejected: dict[str, dict] = {}
+        self.dead_letters: dict[str, str] = {}
         self.next_alert = 1
         self._load()
 
@@ -36,6 +38,7 @@ class StateStore:
             self.next_alert = data["next_alert"]
             self.recent = data.get("recent", {})
             self.rejected = data.get("rejected", {})
+            self.dead_letters = data.get("dead_letters", {})
         except (OSError, ValueError, KeyError, TypeError) as exc:
             # Starting from empty would open a new Opsgenie alert for every known problem.
             raise StateError(f"state file {self.path} is unreadable: {exc}") from exc
@@ -52,6 +55,7 @@ class StateStore:
             "open": self.open,
             "recent": self.recent,
             "rejected": self.rejected,
+            "dead_letters": self.dead_letters,
             "next_alert": self.next_alert,
         }
         fd, tmp = tempfile.mkstemp(dir=self.path.parent, prefix=".state-")

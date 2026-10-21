@@ -81,14 +81,15 @@ def run(args) -> int:
             text = path.read_text()
         except (OSError, UnicodeDecodeError) as exc:
             raw = {"source": str(path)}
-            results.append((str(path), engine.reject(raw, [f"cannot read alert file: {exc}"])))
+            errors = [f"cannot read alert file: {exc}"]
+            results.append((str(path), engine.reject(raw, errors, ["file"])))
             continue
         try:
             data = json.loads(text)
         except json.JSONDecodeError as exc:
             raw = {"source": str(path), "raw": text[:MAX_RAW_CHARS]}
             results.append(
-                (str(path), engine.reject(raw, [f"alert file is not valid JSON: {exc}"]))
+                (str(path), engine.reject(raw, [f"alert file is not valid JSON: {exc}"], ["json"]))
             )
             continue
         for payload in data if isinstance(data, list) else [data]:
@@ -122,9 +123,13 @@ def _as_table(results, counts, needs_review) -> str:
     rows = [header]
     for source, r in results:
         if r.outcome == Outcome.REJECTED:
-            label, alert, where, name = "--", Path(source).name, "", ""
-            errors = [x for x in r.reasons if not x.startswith(("opened ", "same payload"))]
+            label = r.priority.value if r.priority else "--"
+            alert, where, name = Path(source).name, "", ""
+            repeat = [x for x in r.reasons if x.startswith("same ")]
+            errors = [x for x in r.reasons if not x.startswith(("opened ", "same "))]
             why = errors[0] + (f" (+{len(errors) - 1} more)" if len(errors) > 1 else "")
+            if repeat:
+                why = f"{repeat[0]}: {errors[0]}"
         else:
             label = r.priority.value if r.priority else "--"
             name, service, env = r.fingerprint.split("|")
@@ -173,7 +178,11 @@ def _as_text(results, counts, needs_review) -> str:
             lines.append("     checklist:")
             lines.extend(f"       {i}. {step}" for i, step in enumerate(r.checklist, 1))
         elif r.outcome == Outcome.REJECTED:
-            lines.append(f"[--] {source}  -> rejected  {r.opsgenie_id}  owner={r.owner}")
+            label = r.priority.value if r.priority else "--"
+            lines.append(
+                f"[{label}] {source}  -> rejected  {r.opsgenie_id}  owner={r.owner}"
+                f"  page={_yes(r.page) or 'no'}"
+            )
             lines.extend(f"     error: {e}" for e in r.reasons)
             lines.extend(f"       {i}. {step}" for i, step in enumerate(r.checklist, 1))
         else:
