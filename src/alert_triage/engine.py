@@ -1,3 +1,5 @@
+import hashlib
+import json
 from collections.abc import Callable
 from datetime import UTC, datetime
 
@@ -39,15 +41,7 @@ class TriageEngine:
         try:
             alert = parse_alert(payload)
         except InvalidAlert as exc:
-            alert_id = payload.get("alert_id") if isinstance(payload, dict) else None
-            self.notifier.send(
-                "dead_letter",
-                f"dead_letter:{alert_id}",
-                {"received_at": self.clock(), "errors": exc.errors, "payload": payload},
-            )
-            return TriageResult(
-                alert_id=str(alert_id), outcome=Outcome.REJECTED, reasons=exc.errors
-            )
+            return self.reject(payload, exc.errors)
 
         if alert.alert_id in self.state.processed:
             return TriageResult(
@@ -63,14 +57,30 @@ class TriageEngine:
             result = self._duplicate(alert)
         else:
             result = self._open(alert)
+        result.description = alert.description
 
         self.state.processed.add(alert.alert_id)
         self.state.save()
         return result
 
+    def reject(self, payload, errors: list[str]) -> TriageResult:
+        """Store an unusable payload in the dead letter so it is not lost."""
+        alert_id = payload.get("alert_id") if isinstance(payload, dict) else None
+        # Rejected payloads may have no usable id, so the key is derived from the content.
+        digest = hashlib.sha256(
+            json.dumps(payload, sort_keys=True, default=str).encode()
+        ).hexdigest()[:16]
+        self.notifier.send(
+            "dead_letter",
+            f"dead_letter:{digest}",
+            {"received_at": self.clock(), "errors": errors, "payload": payload},
+        )
+        return TriageResult(alert_id=str(alert_id), outcome=Outcome.REJECTED, reasons=errors)
+
     def _open(self, alert) -> TriageResult:
         result = classify(alert, self.catalog)
         ticket_id = self.state.new_ticket_id()
+        result.ticket_id = ticket_id
         result.checklist = build_checklist(self.checklists, result, alert, ticket_id)
         now = self.clock()
         self.notifier.send(
@@ -109,6 +119,7 @@ class TriageEngine:
             alert_id=alert.alert_id,
             outcome=Outcome.DUPLICATE,
             fingerprint=alert.fingerprint,
+            ticket_id=item["ticket_id"],
             priority=Priority(item["priority"]) if item["priority"] else None,
             reasons=[f"already open as {item['ticket_id']}, seen {item['count']} times"],
         )
@@ -150,6 +161,7 @@ class TriageEngine:
             alert_id=alert.alert_id,
             outcome=Outcome.RESOLVED,
             fingerprint=alert.fingerprint,
+            ticket_id=item["ticket_id"],
             reasons=[f"closed {item['ticket_id']} after {item['count']} alerts"],
         )
 

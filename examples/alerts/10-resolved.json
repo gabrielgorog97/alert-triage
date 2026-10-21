@@ -1,0 +1,9 @@
+{
+  "alert_id": "a-1004",
+  "name": "HighErrorRate",
+  "service": "checkout-api",
+  "environment": "prod",
+  "status": "resolved",
+  "started_at": "2026-10-21T08:00:00Z",
+  "description": "error rate back under threshold"
+}

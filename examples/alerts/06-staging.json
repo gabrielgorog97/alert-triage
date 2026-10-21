@@ -1,0 +1,9 @@
+{
+  "alert_id": "a-6001",
+  "name": "ServiceDown",
+  "service": "search-api",
+  "environment": "staging",
+  "status": "firing",
+  "started_at": "2026-10-21T08:25:00Z",
+  "description": "search-api staging pods not ready"
+}

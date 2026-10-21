@@ -1,0 +1,10 @@
+.venv/
+.git/
+dist/
+build/
+demo-run/
+state/
+outbox/
+**/__pycache__/
+.pytest_cache/
+.ruff_cache/

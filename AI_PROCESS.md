@@ -61,6 +61,21 @@ Kept as I worked, newest last. Each entry says what I asked, what came back, and
 - Adding the guardrail made two tests fail: they searched for the text "escalate to", which now
   also appears in the guardrail. The checklist was right; the tests were too loose and now match
   the exact escalation step.
+- CLI and packaging. Asked for a command a person can run on a folder of alerts, with exit codes a
+  script can act on. The assistant wrote `cli.py` (0 = OK, 2 = bad usage, 3 = config or input
+  problem and nothing processed, 4 = finished but some alerts need a human), example fixtures that
+  hit every outcome, a Makefile, a CI workflow and a non-root Dockerfile.
+- Problems found while doing this step, all by the assistant reviewing its own code, not by me:
+  - The dead-letter idempotency key used `alert_id`, so every malformed alert without an id got
+    the same key `dead_letter:None` and a receiver would drop all but the first. Changed to a hash
+    of the payload content and added a test.
+  - `cli.py` had a leftover, meaningless return line in `build_parser`. Fixed before running.
+  - Two new CLI tests failed on the first run. Both were test mistakes: one kept the redelivered
+    copy of `a-1001` instead of the first one, the other read the text output of the first run
+    as JSON. Fixed the tests; the program output was correct.
+- Checked rather than assumed: the GitHub Actions versions in the CI file against the latest
+  releases (checkout v7, setup-python v7, upload-artifact v7).
+- Not verified: the Docker image. Docker was not running on my laptop during this session.
 
 ## Accepted, changed, rejected
 

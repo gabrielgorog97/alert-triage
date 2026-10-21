@@ -1,0 +1,21 @@
+# Synthetic service catalog for the examples. All names are made up.
+checkout-api:
+  owner: payments-team
+  escalation: payments-oncall-lead
+  customer_facing: true
+  environments: [prod, staging]
+  runbook: https://runbooks.example.com/checkout-api
+
+search-api:
+  owner: discovery-team
+  escalation: discovery-oncall-lead
+  customer_facing: true
+  environments: [prod, staging]
+  runbook: https://runbooks.example.com/search-api
+
+report-builder:
+  owner: data-team
+  escalation: data-oncall-lead
+  customer_facing: false
+  environments: [prod]
+  runbook: https://runbooks.example.com/report-builder

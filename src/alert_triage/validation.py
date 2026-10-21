@@ -46,6 +46,9 @@ def parse_alert(data) -> Alert:
         if data.get(name) is not None and not _is_number(data[name]):
             errors.append(f"'{name}' must be a number when present")
 
+    if data.get("description") is not None and not isinstance(data["description"], str):
+        errors.append("'description' must be a string when present")
+
     if errors:
         raise InvalidAlert(errors)
 
@@ -58,4 +61,5 @@ def parse_alert(data) -> Alert:
         started_at=started_at,
         value=data.get("value"),
         threshold=data.get("threshold"),
+        description=data.get("description"),
     )

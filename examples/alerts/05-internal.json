@@ -1,0 +1,9 @@
+{
+  "alert_id": "a-5001",
+  "name": "ServiceDown",
+  "service": "report-builder",
+  "environment": "prod",
+  "status": "firing",
+  "started_at": "2026-10-21T08:20:00Z",
+  "description": "report-builder synthetic check failing"
+}

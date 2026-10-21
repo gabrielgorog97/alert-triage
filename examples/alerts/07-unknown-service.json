@@ -1,0 +1,11 @@
+{
+  "alert_id": "a-7001",
+  "name": "HighErrorRate",
+  "service": "loyalty-points",
+  "environment": "prod",
+  "status": "firing",
+  "value": 0.3,
+  "threshold": 0.05,
+  "started_at": "2026-10-21T08:30:00Z",
+  "description": "errors on a service nobody added to the catalog"
+}

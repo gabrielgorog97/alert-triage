@@ -1,0 +1,8 @@
+{
+  "alert_id": "a-8001",
+  "name": "HighErrorRate",
+  "environment": "prod",
+  "status": "firing",
+  "value": "very high",
+  "started_at": "yesterday"
+}

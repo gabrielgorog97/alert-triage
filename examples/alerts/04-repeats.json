@@ -1,0 +1,35 @@
+[
+  {
+    "alert_id": "a-1001",
+    "name": "HighErrorRate",
+    "service": "checkout-api",
+    "environment": "prod",
+    "status": "firing",
+    "value": 0.07,
+    "threshold": 0.05,
+    "started_at": "2026-10-21T08:00:00Z",
+    "description": "redelivery of a-1001 by the monitoring system"
+  },
+  {
+    "alert_id": "a-1002",
+    "name": "HighErrorRate",
+    "service": "checkout-api",
+    "environment": "prod",
+    "status": "firing",
+    "value": 0.08,
+    "threshold": 0.05,
+    "started_at": "2026-10-21T08:00:00Z",
+    "description": "still about 8% errors"
+  },
+  {
+    "alert_id": "a-1003",
+    "name": "HighErrorRate",
+    "service": "checkout-api",
+    "environment": "prod",
+    "status": "firing",
+    "value": 0.15,
+    "threshold": 0.05,
+    "started_at": "2026-10-21T08:00:00Z",
+    "description": "errors grew to 15%"
+  }
+]

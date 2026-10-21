@@ -1,0 +1,11 @@
+{
+  "alert_id": "a-1001",
+  "name": "HighErrorRate",
+  "service": "checkout-api",
+  "environment": "prod",
+  "status": "firing",
+  "value": 0.07,
+  "threshold": 0.05,
+  "started_at": "2026-10-21T08:00:00Z",
+  "description": "7% of checkout requests return 5xx over the last 5 minutes"
+}

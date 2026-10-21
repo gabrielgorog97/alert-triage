@@ -100,6 +100,15 @@ def test_non_object_payload_goes_to_dead_letter(engine, outbox):
     assert engine.process(["not", "an", "object"]).outcome == Outcome.REJECTED
 
 
+def test_dead_letter_key_depends_on_content_not_on_alert_id(engine, outbox):
+    engine.process({"name": "HighErrorRate"})
+    engine.process({"name": "HighLatency"})
+    engine.process({"name": "HighErrorRate"})
+    keys = [e["idempotency_key"] for e in outbox.events]
+    assert keys[0] != keys[1]
+    assert keys[0] == keys[2]
+
+
 def test_repeated_ambiguous_alert_creates_one_review_ticket(engine, outbox, alert_data):
     for i in range(3):
         engine.process(alert(alert_data, f"a-{i}", service="mystery-svc"))

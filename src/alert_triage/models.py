@@ -29,6 +29,7 @@ class Alert:
     started_at: datetime
     value: float | None = None
     threshold: float | None = None
+    description: str | None = None
 
     @property
     def fingerprint(self) -> str:
@@ -50,6 +51,8 @@ class TriageResult:
     alert_id: str
     outcome: Outcome
     fingerprint: str | None = None
+    description: str | None = None
+    ticket_id: str | None = None
     priority: Priority | None = None
     owner: str | None = None
     escalation: str | None = None

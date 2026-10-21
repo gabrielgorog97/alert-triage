@@ -1,0 +1,9 @@
+{
+  "alert_id": "a-3001",
+  "name": "DependencyDown",
+  "service": "checkout-api",
+  "environment": "prod",
+  "status": "firing",
+  "started_at": "2026-10-21T08:10:00Z",
+  "description": "payment-gateway health check failing from checkout-api"
+}

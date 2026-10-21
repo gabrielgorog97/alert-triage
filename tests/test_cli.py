@@ -1,0 +1,100 @@
+import json
+import shutil
+from pathlib import Path
+
+import pytest
+
+from alert_triage.cli import EXIT_CONFIG_ERROR, EXIT_NEEDS_REVIEW, EXIT_OK, main
+
+EXAMPLES = Path(__file__).parent.parent / "examples"
+
+
+def run(tmp_path, *inputs, catalog=EXAMPLES / "services.yaml", extra=()):
+    argv = ["run", *map(str, inputs), "--catalog", str(catalog)]
+    argv += ["--state", str(tmp_path / "state.json"), "--outbox", str(tmp_path / "outbox")]
+    return main([*argv, *extra])
+
+
+def test_examples_end_to_end(tmp_path, capsys):
+    code = run(tmp_path, EXAMPLES / "alerts", extra=["--json"])
+    report = json.loads(capsys.readouterr().out)
+    by_id = {}
+    for r in report["results"]:
+        # a-1001 appears twice: first triaged, then its redelivery is ignored.
+        by_id.setdefault(r["alert_id"], r)
+
+    assert code == EXIT_NEEDS_REVIEW
+    assert by_id["a-1001"]["priority"] == "P2"
+    assert by_id["a-2001"]["priority"] == "P2"
+    assert by_id["a-3001"]["priority"] == "P1"
+    assert by_id["a-1003"]["outcome"] == "duplicate"
+    assert by_id["a-1003"]["priority"] == "P1"
+    assert by_id["a-5001"]["priority"] == "P3"
+    assert by_id["a-6001"]["priority"] == "P4"
+    assert by_id["a-7001"]["outcome"] == "manual_review"
+    assert by_id["a-1004"]["outcome"] == "resolved"
+    assert [r["outcome"] for r in report["results"] if r["alert_id"] == "a-1001"] == [
+        "triaged",
+        "ignored",
+    ]
+    assert report["summary"]["rejected"] == 2
+    assert report["summary"]["needs_review"] == 3
+
+
+def test_second_run_on_same_input_creates_no_new_work(tmp_path, capsys):
+    run(tmp_path, EXAMPLES / "alerts")
+    capsys.readouterr()
+    events = (tmp_path / "outbox" / "events.jsonl").read_text().splitlines()
+
+    run(tmp_path, EXAMPLES / "alerts", extra=["--json"])
+    report = json.loads(capsys.readouterr().out)
+    accepted = [r for r in report["results"] if r["outcome"] != "rejected"]
+    assert all(r["outcome"] == "ignored" for r in accepted)
+    rerun_events = (tmp_path / "outbox" / "events.jsonl").read_text().splitlines()
+    new_actions = {json.loads(e)["action"] for e in rerun_events[len(events) :]}
+    assert new_actions == {"dead_letter"}
+
+
+def test_clean_batch_exits_zero(tmp_path, capsys):
+    assert run(tmp_path, EXAMPLES / "alerts" / "01-error-rate.json") == EXIT_OK
+    out = capsys.readouterr().out
+    assert "[P2] a-1001  HighErrorRate  checkout-api/prod  -> triaged  T-0001" in out
+    assert "what: 7% of checkout requests" in out
+    assert "Needs human review: 0." in out
+
+
+def test_missing_catalog_is_a_config_error(tmp_path, capsys):
+    code = run(tmp_path, EXAMPLES / "alerts", catalog=tmp_path / "missing.yaml")
+    assert code == EXIT_CONFIG_ERROR
+    assert "cannot read catalog" in capsys.readouterr().err
+
+
+def test_missing_input_is_a_config_error(tmp_path, capsys):
+    assert run(tmp_path, tmp_path / "nope") == EXIT_CONFIG_ERROR
+
+
+def test_empty_directory_is_a_config_error(tmp_path):
+    (tmp_path / "empty").mkdir()
+    assert run(tmp_path, tmp_path / "empty") == EXIT_CONFIG_ERROR
+
+
+def test_corrupt_state_stops_before_any_work(tmp_path):
+    (tmp_path / "state.json").write_text("garbage")
+    assert run(tmp_path, EXAMPLES / "alerts") == EXIT_CONFIG_ERROR
+    assert not (tmp_path / "outbox").exists()
+
+
+def test_unreadable_file_does_not_stop_the_batch(tmp_path, capsys):
+    shutil.copy(EXAMPLES / "alerts" / "09-not-json.json", tmp_path / "a.json")
+    shutil.copy(EXAMPLES / "alerts" / "02-latency.json", tmp_path / "b.json")
+    code = run(tmp_path, tmp_path / "a.json", tmp_path / "b.json")
+    out = capsys.readouterr().out
+    assert code == EXIT_NEEDS_REVIEW
+    assert "cannot read alert file" in out
+    assert "[P2] a-2001" in out
+
+
+def test_usage_error_exits_two():
+    with pytest.raises(SystemExit) as exc:
+        main(["run"])
+    assert exc.value.code == 2

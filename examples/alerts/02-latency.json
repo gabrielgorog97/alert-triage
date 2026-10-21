@@ -1,0 +1,11 @@
+{
+  "alert_id": "a-2001",
+  "name": "HighLatency",
+  "service": "search-api",
+  "environment": "prod",
+  "status": "firing",
+  "value": 1.8,
+  "threshold": 0.5,
+  "started_at": "2026-10-21T08:05:00Z",
+  "description": "p95 latency of search requests is 1.8s (target 0.5s)"
+}
