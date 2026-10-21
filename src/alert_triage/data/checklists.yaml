@@ -5,7 +5,11 @@ assess:
   - "Read the alert: priority {priority}, what happened, service {service}, environment {environment}."
   - "Open the runbook before doing anything else: {runbook}"
   - "Acknowledge ticket {ticket_id} so others know it is being handled."
-  - "Check customer impact: is {service} in {environment} failing for users right now?"
+
+# Non-prod has no real customers, so the question there is who is blocked.
+impact:
+  prod: "Check customer impact: is {service} in {environment} failing for users right now?"
+  non_prod: "Check who is blocked: is {environment} needed for testing or a release right now?"
 
 # Evidence every alert type needs, collected before any change.
 evidence_common:

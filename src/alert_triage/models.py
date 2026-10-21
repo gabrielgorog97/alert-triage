@@ -54,6 +54,7 @@ class TriageResult:
     description: str | None = None
     ticket_id: str | None = None
     priority: Priority | None = None
+    impact: str | None = None
     owner: str | None = None
     escalation: str | None = None
     escalate_after_minutes: int | None = None

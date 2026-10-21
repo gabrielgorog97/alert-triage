@@ -58,11 +58,32 @@ def test_every_known_alert_type_renders(templates, catalog, alert_data, name):
 def test_missing_alert_type_in_templates_is_an_error(tmp_path):
     path = tmp_path / "checklists.yaml"
     path.write_text(
-        "assess: []\nevidence_common: []\nalerts: {}\nguardrail: x\n"
-        "escalate: {}\nclose: []\nmanual_review: []\n"
+        "assess: []\nimpact: {prod: x, non_prod: y}\nevidence_common: []\nalerts: {}\n"
+        "guardrail: x\nescalate: {}\nclose: []\nmanual_review: []\n"
     )
     with pytest.raises(ChecklistError, match="HighErrorRate"):
         load_checklists(path)
+
+
+def test_impact_without_non_prod_step_is_an_error(tmp_path):
+    path = tmp_path / "checklists.yaml"
+    path.write_text(
+        "assess: []\nimpact: {prod: x}\nevidence_common: []\nalerts: {}\n"
+        "guardrail: x\nescalate: {}\nclose: []\nmanual_review: []\n"
+    )
+    with pytest.raises(ChecklistError, match="non_prod"):
+        load_checklists(path)
+
+
+def test_prod_asks_about_customers(templates, catalog, alert_data):
+    steps = checklist_for(templates, catalog, alert_data)
+    assert steps[3].startswith("Check customer impact")
+
+
+def test_staging_asks_who_is_blocked_not_about_customers(templates, catalog, alert_data):
+    steps = checklist_for(templates, catalog, alert_data, environment="staging")
+    assert steps[3].startswith("Check who is blocked: is staging needed")
+    assert not any("customer impact" in s for s in steps)
 
 
 def test_escalation_asks_for_the_evidence_already_collected(templates, catalog, alert_data):
@@ -74,5 +95,5 @@ def test_escalation_asks_for_the_evidence_already_collected(templates, catalog, 
 def test_missing_section_is_an_error(tmp_path):
     path = tmp_path / "checklists.yaml"
     path.write_text("assess: []\n")
-    with pytest.raises(ChecklistError, match="evidence_common"):
+    with pytest.raises(ChecklistError, match="'impact'"):
         load_checklists(path)

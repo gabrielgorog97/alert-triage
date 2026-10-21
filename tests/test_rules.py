@@ -85,6 +85,35 @@ def test_zero_threshold_goes_to_manual_review(alert_data, catalog):
     assert result.outcome == Outcome.MANUAL_REVIEW
 
 
+@pytest.mark.parametrize(
+    ("changes", "impact"),
+    [
+        (
+            {},
+            "Customers likely affected: checkout-api is customer-facing in prod "
+            "(HighErrorRate: some requests fail).",
+        ),
+        (
+            {"name": "DependencyDown"},
+            "Customers likely affected: checkout-api is customer-facing "
+            "in prod (DependencyDown: features that rely on the dependency may fail).",
+        ),
+        (
+            {"service": "report-builder"},
+            "No direct customer impact expected: report-builder is "
+            "internal; check which teams or jobs depend on it.",
+        ),
+        ({"environment": "staging"}, "No customer impact: non-prod environment 'staging'."),
+        (
+            {"service": "mystery-svc"},
+            "Unknown: the rules cannot decide (see why); assess impact by hand.",
+        ),
+    ],
+)
+def test_impact_statement(alert_data, catalog, changes, impact):
+    assert triage(alert_data, catalog, **changes).impact == impact
+
+
 def test_all_manual_review_reasons_are_listed(alert_data, catalog):
     result = triage(alert_data, catalog, service="mystery-svc", name="DiskAlmostFull")
     assert len(result.reasons) == 2

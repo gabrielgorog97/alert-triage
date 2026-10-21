@@ -4,7 +4,7 @@ from pathlib import Path
 import yaml
 
 from alert_triage.models import Alert, Outcome, Priority, TriageResult
-from alert_triage.rules import KNOWN_ALERTS
+from alert_triage.rules import KNOWN_ALERTS, PROD_ENVIRONMENTS
 
 
 class ChecklistError(Exception):
@@ -22,10 +22,13 @@ def load_checklists(path: Path | None = None) -> dict:
     except (OSError, yaml.YAMLError) as exc:
         raise ChecklistError(f"cannot load checklists: {exc}") from exc
 
-    required = ("assess", "evidence_common", "alerts", "guardrail", "escalate", "close")
+    required = ("assess", "impact", "evidence_common", "alerts", "guardrail", "escalate", "close")
     for key in (*required, "manual_review"):
         if not isinstance(data, dict) or key not in data:
             raise ChecklistError(f"checklists are missing '{key}'")
+    for key in ("prod", "non_prod"):
+        if not isinstance(data["impact"], dict) or not data["impact"].get(key):
+            raise ChecklistError(f"checklist 'impact' needs a '{key}' step")
     for name in KNOWN_ALERTS:
         steps = data["alerts"].get(name)
         if not steps or not steps.get("evidence") or not steps.get("mitigate"):
@@ -51,8 +54,10 @@ def build_checklist(templates: dict, result: TriageResult, alert: Alert, ticket_
         steps = list(templates["manual_review"])
     else:
         per_alert = templates["alerts"][alert.name]
+        impact = "prod" if alert.environment in PROD_ENVIRONMENTS else "non_prod"
         steps = [
             *templates["assess"],
+            templates["impact"][impact],
             *templates["evidence_common"],
             *per_alert["evidence"],
             templates["guardrail"],

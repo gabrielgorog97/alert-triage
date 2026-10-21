@@ -10,6 +10,12 @@ PROD_ENVIRONMENTS = ("prod",)
 ESCALATE_AFTER_MINUTES = {Priority.P1: 15, Priority.P2: 30}
 PAGED_PRIORITIES = (Priority.P1, Priority.P2)
 MANUAL_REVIEW_QUEUE = "eoc-triage"
+CUSTOMER_EFFECT = {
+    "HighErrorRate": "some requests fail",
+    "HighLatency": "requests are slow",
+    "DependencyDown": "features that rely on the dependency may fail",
+    "ServiceDown": "the service is unavailable",
+}
 
 
 def classify(alert: Alert, catalog: dict[str, Service]) -> TriageResult:
@@ -21,6 +27,7 @@ def classify(alert: Alert, catalog: dict[str, Service]) -> TriageResult:
             alert_id=alert.alert_id,
             outcome=Outcome.MANUAL_REVIEW,
             fingerprint=alert.fingerprint,
+            impact="Unknown: the rules cannot decide (see why); assess impact by hand.",
             owner=MANUAL_REVIEW_QUEUE,
             notify=["ticket"],
             reasons=problems,
@@ -33,6 +40,7 @@ def classify(alert: Alert, catalog: dict[str, Service]) -> TriageResult:
         outcome=Outcome.TRIAGED,
         fingerprint=alert.fingerprint,
         priority=priority,
+        impact=_impact(alert, priority),
         owner=service.owner,
         escalation=service.escalation if priority in ESCALATE_AFTER_MINUTES else None,
         escalate_after_minutes=ESCALATE_AFTER_MINUTES.get(priority),
@@ -59,6 +67,20 @@ def _manual_review_reasons(alert: Alert, service: Service | None) -> list[str]:
         elif alert.threshold <= 0:
             reasons.append(f"threshold must be positive, got {alert.threshold}")
     return reasons
+
+
+def _impact(alert: Alert, priority: Priority) -> str:
+    if priority == Priority.P4:
+        return f"No customer impact: non-prod environment '{alert.environment}'."
+    if priority == Priority.P3:
+        return (
+            f"No direct customer impact expected: {alert.service} is internal; "
+            "check which teams or jobs depend on it."
+        )
+    return (
+        f"Customers likely affected: {alert.service} is customer-facing in prod "
+        f"({alert.name}: {CUSTOMER_EFFECT[alert.name]})."
+    )
 
 
 def _priority(alert: Alert, service: Service) -> tuple[Priority, str]:

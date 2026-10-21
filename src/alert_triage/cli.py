@@ -109,6 +109,7 @@ def _as_text(results, counts, needs_review) -> str:
             lines.append(head + f"  owner={r.owner}  notify={','.join(r.notify)}")
             if r.description:
                 lines.append(f"     what: {r.description}")
+            lines.append(f"     impact: {r.impact}")
             lines.append(f"     why: {'; '.join(r.reasons)}")
             if r.escalate_after_minutes:
                 lines.append(f"     escalate: {r.escalation} after {r.escalate_after_minutes} min")
