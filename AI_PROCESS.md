@@ -25,6 +25,16 @@ Kept as I worked, newest last. Each entry says what I asked, what came back, and
   asked where staging goes instead of guessing, and I split P3/P4 as above.
 - Two rules were the assistant's proposal, which I accepted: ignore a redelivered `alert_id`, and
   send threshold alerts without numbers to manual review instead of rejecting them.
+- Core code. The assistant proposed four small modules (models, validation, catalog, rules) using
+  only the standard library plus PyYAML. It suggested hand-written validation over a library like
+  pydantic so that every error message and rule is visible and easy to explain; I agreed.
+- The first version used `class Outcome(str, Enum)`; ruff flagged it (UP042) and it was changed to
+  `StrEnum`.
+- Choices in the generated code I checked and kept: validation reports every problem at once
+  instead of stopping at the first one; booleans are not accepted as numbers (`True` is an `int` in
+  Python); a broken catalog stops the run with an error instead of sending every alert to manual
+  review; a threshold of 0 or less goes to manual review, because "2x threshold" would make every
+  value a P1.
 
 ## Accepted, changed, rejected
 
