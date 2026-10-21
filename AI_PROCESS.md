@@ -87,12 +87,20 @@ Kept as I worked, newest last. Each entry says what I asked, what came back, and
   where there are no real customers. I chose to replace it, for non-prod only, with "who is
   blocked: is staging needed for testing or a release right now?".
 
+- Presentation. When I ran the demo, the full checklists for every alert made the terminal output
+  too long to follow or present. I asked for something easier to read. The assistant offered a
+  short table, an HTML report, both, or a full web app; I chose both and decided against a web app
+  (more code to defend, not asked for). Default output is now one line per alert, `--details`
+  shows the checklists, and `--html` writes a single-file report. The assistant checked the report
+  in a browser and fixed two layout problems (ticket ids wrapping, long file names); a test makes
+  sure alert text is HTML-escaped.
+
 ## Accepted, changed, rejected
 
 **My decisions** (the assistant offered options, I picked): the P1-P4 scale and its rules,
 P3 for internal prod and P4 for staging, deduplication until resolved, 15/30 minute escalation,
 the checklist content and its guardrails, the non-prod impact question, verifying Docker rather
-than dropping it.
+than dropping it, a short table plus HTML report instead of a web app.
 
 **Accepted from the assistant after review:** the module layout and stdlib validation; ignoring
 redelivered ids; manual review for threshold alerts without numbers and for thresholds of 0 or
@@ -110,7 +118,7 @@ priority on a duplicate, because a single lower reading does not prove the probl
 
 ## Verification
 
-- 82 automated tests (`make test`) covering normal alerts, every priority, boundaries
+- 84 automated tests (`make test`) covering normal alerts, every priority, boundaries
   (exactly 2x threshold, just below it, threshold 0), malformed and unreadable input, unknown
   service / environment / alert type, duplicates and redeliveries, priority raise, resolve,
   corrupt state, missing catalog, and the CLI exit codes.

@@ -11,6 +11,7 @@ from alert_triage.checklist import ChecklistError, load_checklists
 from alert_triage.engine import TriageEngine
 from alert_triage.models import Outcome, TriageResult
 from alert_triage.outbox import FileOutbox
+from alert_triage.report import render_html
 from alert_triage.state import StateError, StateStore
 
 EXIT_OK = 0
@@ -40,6 +41,10 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--state", type=Path, default=Path("state/state.json"))
     run.add_argument("--outbox", type=Path, default=Path("outbox"))
     run.add_argument("--json", action="store_true", help="machine-readable output")
+    run.add_argument(
+        "--details", action="store_true", help="show impact, escalation and checklist per alert"
+    )
+    run.add_argument("--html", type=Path, help="also write an HTML report to this file")
     return parser
 
 
@@ -82,10 +87,17 @@ def run(args) -> int:
 
     counts = Counter(r.outcome.value for _, r in results)
     needs_review = sum(1 for _, r in results if r.outcome in NEEDS_HUMAN)
+    if args.html:
+        args.html.parent.mkdir(parents=True, exist_ok=True)
+        args.html.write_text(render_html(results, counts, needs_review))
     if args.json:
         print(json.dumps(_as_json(results, counts, needs_review), indent=2))
-    else:
+    elif args.details:
         print(_as_text(results, counts, needs_review))
+    else:
+        print(_as_table(results, counts, needs_review))
+        if args.html:
+            print(f"HTML report: {args.html}")
     return EXIT_NEEDS_REVIEW if needs_review else EXIT_OK
 
 
@@ -94,6 +106,38 @@ def _as_json(results, counts, needs_review) -> dict:
         "results": [{"source": source, **asdict(result)} for source, result in results],
         "summary": {"total": len(results), "needs_review": needs_review, **counts},
     }
+
+
+def _as_table(results, counts, needs_review) -> str:
+    header = ("PRI", "ALERT", "SERVICE/ENV", "TYPE", "RESULT", "TICKET", "NOTIFY", "WHY")
+    rows = [header]
+    for source, r in results:
+        if r.outcome == Outcome.REJECTED:
+            label, alert, where, name = "--", Path(source).name, "", ""
+            why = f"{r.reasons[0]}" + (
+                f" (+{len(r.reasons) - 1} more)" if len(r.reasons) > 1 else ""
+            )
+        else:
+            label = r.priority.value if r.priority else "--"
+            name, service, env = r.fingerprint.split("|")
+            alert, where = r.alert_id, f"{service}/{env}"
+            why = "; ".join(x for x in r.reasons if not x.startswith("opened "))
+        rows.append(
+            (label, alert, where, name, r.outcome.value, r.ticket_id or "", ",".join(r.notify), why)
+        )
+
+    widths = [max(len(row[i]) for row in rows) for i in range(len(header) - 1)]
+    lines = [
+        "  ".join(c.ljust(w) for c, w in zip(row, widths, strict=False)) + "  " + row[-1]
+        for row in rows
+    ]
+    parts = ", ".join(f"{n} {outcome}" for outcome, n in sorted(counts.items()))
+    lines += [
+        "",
+        f"Summary: {len(results)} alerts: {parts}. Needs human review: {needs_review}.",
+        "Add --details for impact and checklists, or --html FILE for a browser report.",
+    ]
+    return "\n".join(lines)
 
 
 def _as_text(results, counts, needs_review) -> str:

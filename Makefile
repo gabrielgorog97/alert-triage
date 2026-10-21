@@ -2,7 +2,7 @@ PYTHON ?= python3
 VENV := .venv
 BIN := $(VENV)/bin
 
-.PHONY: help install lint format test build demo demo-json docker clean ci
+.PHONY: help install lint format test build demo demo-details demo-json docker clean ci
 
 help:
 	@echo "install    create .venv and install the package with dev tools"
@@ -10,7 +10,8 @@ help:
 	@echo "format     apply ruff formatting"
 	@echo "test       run the test suite"
 	@echo "build      build the wheel and sdist into dist/"
-	@echo "demo       run the CLI on examples/ from a clean state"
+	@echo "demo       run the CLI on examples/: short table + demo-run/report.html"
+	@echo "demo-details  same, with impact and checklists in the terminal"
 	@echo "demo-json  same, with JSON output"
 	@echo "docker     build the container image"
 	@echo "ci         lint + test + build (what CI runs)"
@@ -40,7 +41,12 @@ build: install
 demo: install
 	rm -rf demo-run
 	-$(BIN)/alert-triage run examples/alerts --catalog examples/services.yaml \
-		--state demo-run/state.json --outbox demo-run/outbox
+		--state demo-run/state.json --outbox demo-run/outbox --html demo-run/report.html
+
+demo-details: install
+	rm -rf demo-run
+	-$(BIN)/alert-triage run examples/alerts --catalog examples/services.yaml \
+		--state demo-run/state.json --outbox demo-run/outbox --details
 
 demo-json: install
 	rm -rf demo-run

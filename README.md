@@ -34,7 +34,8 @@ Requires Python 3.11+ and `make`.
 
 ```bash
 make install    # creates .venv and installs the package with dev tools
-make demo       # runs the CLI on examples/ from a clean state
+make demo       # runs the CLI on examples/: short table + demo-run/report.html
+open demo-run/report.html   # the same results in the browser, with checklists
 make ci         # lint + tests + build wheel (what CI runs)
 ```
 
@@ -43,7 +44,8 @@ make ci         # lint + tests + build wheel (what CI runs)
 | `make lint` | `ruff check` and `ruff format --check` |
 | `make test` | `pytest` |
 | `make build` | wheel and sdist in `dist/` (the runnable artifact) |
-| `make demo` / `make demo-json` | run on the examples, text or JSON output |
+| `make demo` | run on the examples: one line per alert, plus `demo-run/report.html` |
+| `make demo-details` / `make demo-json` | same, with full checklists in the terminal, or JSON |
 | `make docker` | container image `alert-triage:local` (non-root) |
 | `make clean` | remove venv, build output and demo state |
 
@@ -54,7 +56,7 @@ Dependency versions are pinned in `pyproject.toml`. The same `make ci` runs in
 
 ```bash
 alert-triage run INPUTS... --catalog services.yaml [--state state/state.json] \
-    [--outbox outbox] [--checklists my-checklists.yaml] [--json]
+    [--outbox outbox] [--checklists my-checklists.yaml] [--details | --json] [--html FILE]
 ```
 
 - `INPUTS` are alert JSON files or directories (all `*.json`, in name order). A file may hold one
@@ -63,7 +65,10 @@ alert-triage run INPUTS... --catalog services.yaml [--state state/state.json] \
 - `--outbox` is where simulated tickets, pages and rejected payloads are written
   (`events.jsonl`). Default `outbox/`.
 - `--checklists` replaces the built-in checklist templates with your own file.
-- `--json` prints machine-readable output instead of text.
+- Default output is one line per alert. `--details` adds impact, escalation and the checklist
+  for each alert; `--json` prints machine-readable output instead.
+- `--html FILE` also writes a single-file HTML report (no scripts, no external resources) with the
+  same results, colour-coded by priority, with each checklist behind a click.
 
 Exit codes, so a script or pipeline can act on the result:
 
@@ -106,7 +111,28 @@ docker run --rm -v "$PWD/examples:/work/examples:ro" alert-triage:local \
 Exit code is 4, because three alerts need a person. Running `make demo`'s command a second time
 on the same state produces no new tickets or pages: every alert is a redelivery.
 
-Text output (first alert in full, others shortened):
+Default output, one line per alert:
+
+```text
+PRI  ALERT              SERVICE/ENV          TYPE            RESULT         TICKET  NOTIFY       WHY
+P2   a-1001             checkout-api/prod    HighErrorRate   triaged        T-0001  page,ticket  prod, customer-facing, HighErrorRate above threshold
+P2   a-2001             search-api/prod      HighLatency     triaged        T-0002  page,ticket  prod, customer-facing, HighLatency above threshold
+P1   a-3001             checkout-api/prod    DependencyDown  triaged        T-0003  page,ticket  prod, customer-facing, DependencyDown
+--   a-1001             checkout-api/prod    HighErrorRate   ignored                             alert_id already processed (redelivery)
+P2   a-1002             checkout-api/prod    HighErrorRate   duplicate      T-0001               already open as T-0001, seen 2 times
+P1   a-1003             checkout-api/prod    HighErrorRate   duplicate      T-0001               already open as T-0001, seen 3 times; priority raised P2 -> P1
+P3   a-5001             report-builder/prod  ServiceDown     triaged        T-0004  ticket       prod, internal service (not customer-facing)
+P4   a-6001             search-api/staging   ServiceDown     triaged        T-0005  ticket       non-prod environment 'staging'
+--   a-7001             loyalty-points/prod  HighErrorRate   manual_review  T-0006  ticket       service 'loyalty-points' is not in the catalog
+--   08-malformed.json                                       rejected                            'service' is required and must be a non-empty string (+2 more)
+--   09-not-json.json                                        rejected                            cannot read alert file: Expecting ',' delimiter: line 2 column 1 (char 70)
+--   a-1004             checkout-api/prod    HighErrorRate   resolved       T-0001               closed T-0001 after 3 alerts
+
+Summary: 12 alerts: 2 duplicate, 1 ignored, 1 manual_review, 2 rejected, 1 resolved, 5 triaged. Needs human review: 3.
+```
+
+With `--details`, each triaged or manual-review alert also shows impact, escalation and its
+checklist:
 
 ```text
 [P2] a-1001  HighErrorRate  checkout-api/prod  -> triaged  T-0001  owner=payments-team  notify=page,ticket
@@ -132,12 +158,6 @@ Text output (first alert in full, others shortened):
        15. If not mitigated within 30 minutes, escalate to payments-oncall-lead. Include what you checked, the evidence collected, and what you already tried.
        16. Before closing ticket T-0001, write down what was checked, what happened, and how it was resolved. Do not close it without this.
 
-[--] a-1001  HighErrorRate  checkout-api/prod  -> ignored  (alert_id already processed (redelivery))
-
-[P2] a-1002  HighErrorRate  checkout-api/prod  -> duplicate  T-0001  (already open as T-0001, seen 2 times)
-
-[P1] a-1003  HighErrorRate  checkout-api/prod  -> duplicate  T-0001  (already open as T-0001, seen 3 times; priority raised P2 -> P1)
-
 [--] a-7001  HighErrorRate  loyalty-points/prod  -> manual_review  T-0006  owner=eoc-triage  notify=ticket
      what: errors on a service nobody added to the catalog
      impact: Unknown: the rules cannot decide (see why); assess impact by hand.
@@ -148,13 +168,6 @@ Text output (first alert in full, others shortened):
        3. Decide the priority by hand and write the reason in ticket T-0006.
        4. When handing over, include what you checked and why the alert was unclear.
        5. Remove the ambiguity for next time: add the service, environment or alert type to the catalog or fix the alert definition.
-
-[--] examples/alerts/08-malformed.json  -> rejected
-     error: 'service' is required and must be a non-empty string
-     error: 'started_at' is not a valid ISO 8601 time: 'yesterday'
-     error: 'value' must be a number when present
-
-Summary: 12 alerts: 2 duplicate, 1 ignored, 1 manual_review, 2 rejected, 1 resolved, 5 triaged. Needs human review: 3.
 ```
 
 `--json` prints the same results as objects (`priority`, `impact`, `owner`, `escalation`,
@@ -293,7 +306,8 @@ producing an incomplete checklist.
 | `state.py` | persistent state with atomic writes |
 | `outbox.py` | `Notifier` interface and the file / memory adapters |
 | `engine.py` | the rule order above: redelivery, resolve, duplicate, open |
-| `cli.py` | argument parsing, batch processing, output, exit codes |
+| `cli.py` | argument parsing, batch processing, table / details / JSON output, exit codes |
+| `report.py` | the single-file HTML report |
 
 ## Tests
 
@@ -301,7 +315,7 @@ producing an incomplete checklist.
 make test
 ```
 
-82 tests, no network, each with a temporary state and outbox:
+84 tests, no network, each with a temporary state and outbox:
 
 | Area | File | Examples |
 |---|---|---|
@@ -312,6 +326,7 @@ make test
 | Ambiguous | `test_rules.py`, `test_engine.py` | unknown service, environment, alert type, missing numbers; repeated ambiguous alert gives one ticket |
 | Failure paths | `test_catalog.py`, `test_checklist.py`, `test_engine.py`, `test_cli.py` | broken catalog, broken templates, corrupt state, missing input, exit codes |
 | Checklists | `test_checklist.py` | evidence before mitigation, placeholders filled, non-prod impact question |
+| Output | `test_cli.py` | one-line table, HTML report written and HTML-escaped |
 
 ## Connecting to real systems
 

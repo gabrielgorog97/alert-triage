@@ -55,8 +55,48 @@ def test_second_run_on_same_input_creates_no_new_work(tmp_path, capsys):
     assert new_actions == {"dead_letter"}
 
 
+def test_default_output_is_one_line_per_alert(tmp_path, capsys):
+    run(tmp_path, EXAMPLES / "alerts")
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[0].split() == [
+        "PRI",
+        "ALERT",
+        "SERVICE/ENV",
+        "TYPE",
+        "RESULT",
+        "TICKET",
+        "NOTIFY",
+        "WHY",
+    ]
+    assert lines[1].split()[:6] == [
+        "P2",
+        "a-1001",
+        "checkout-api/prod",
+        "HighErrorRate",
+        "triaged",
+        "T-0001",
+    ]
+    assert any(line.startswith("--   08-malformed.json") and "(+2 more)" in line for line in lines)
+    assert not any("checklist" in line for line in lines[:13])
+
+
+def test_html_report_is_written_and_escaped(tmp_path, capsys):
+    alert = json.loads((EXAMPLES / "alerts" / "01-error-rate.json").read_text())
+    alert["description"] = "<script>alert(1)</script>"
+    (tmp_path / "a.json").write_text(json.dumps(alert))
+    report = tmp_path / "out" / "report.html"
+
+    assert run(tmp_path, tmp_path / "a.json", extra=["--html", str(report)]) == EXIT_OK
+    html = report.read_text()
+    assert '<span class="tag P2">P2</span>' in html
+    assert "Impact and checklist (16 steps)" in html
+    assert "<script>" not in html
+    assert "&lt;script&gt;" in html
+    assert f"HTML report: {report}" in capsys.readouterr().out
+
+
 def test_clean_batch_exits_zero(tmp_path, capsys):
-    assert run(tmp_path, EXAMPLES / "alerts" / "01-error-rate.json") == EXIT_OK
+    assert run(tmp_path, EXAMPLES / "alerts" / "01-error-rate.json", extra=["--details"]) == EXIT_OK
     out = capsys.readouterr().out
     assert "[P2] a-1001  HighErrorRate  checkout-api/prod  -> triaged  T-0001" in out
     assert "what: 7% of checkout requests" in out
@@ -91,7 +131,7 @@ def test_unreadable_file_does_not_stop_the_batch(tmp_path, capsys):
     out = capsys.readouterr().out
     assert code == EXIT_NEEDS_REVIEW
     assert "cannot read alert file" in out
-    assert "[P2] a-2001" in out
+    assert "a-2001" in out and "triaged" in out
 
 
 def test_usage_error_exits_two():
