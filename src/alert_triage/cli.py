@@ -165,7 +165,7 @@ def _as_text(results, counts, needs_review) -> str:
             lines.append(f"     why: {'; '.join(r.reasons)}")
             if r.ack_timeout_minutes:
                 lines.append(
-                    f"     page: {r.page_to}; not acknowledged in {r.ack_timeout_minutes} min"
+                    f"     pages {r.responder}; not acknowledged in {r.ack_timeout_minutes} min"
                     f" -> Opsgenie escalates to {r.escalation}"
                 )
             if r.escalation:

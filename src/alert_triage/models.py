@@ -58,7 +58,7 @@ class TriageResult:
     impact: str | None = None
     owner: str | None = None
     escalation: str | None = None
-    page_to: str | None = None
+    responder: str | None = None
     ack_timeout_minutes: int | None = None
     page: bool = False
     reasons: list[str] = field(default_factory=list)

@@ -101,8 +101,8 @@ docker run --rm -v "$PWD/examples:/work/examples:ro" alert-triage:local \
 | `04-repeats` (3 alerts) | `a-1001` again | **ignored** | same `alert_id` already processed: a redelivery |
 | | `a-1002`, 0.08 | **duplicate** of OG-0001, no new work | same name + service + environment still open |
 | | `a-1003`, 0.15 | **duplicate**, OG-0001 raised from P2 to P1, pages again | 3x threshold is P1; a worse repeat must not stay hidden |
-| `05-internal` | ServiceDown, report-builder prod | **P3**, OG-0004 to the owner, no page | prod but internal; no customer impact expected |
-| `06-staging` | ServiceDown, search-api staging | **P4**, OG-0005 to the owner, no page | non-prod, even for an outage |
+| `05-internal` | ServiceDown, report-builder prod | **P3**, OG-0004 to EOC on-call, no page | prod but internal; no customer impact expected |
+| `06-staging` | ServiceDown, search-api staging | **P4**, OG-0005 to EOC on-call, no page | non-prod, even for an outage |
 | `07-unknown-service` | HighErrorRate, loyalty-points prod | **manual_review**, OG-0006 to `eoc-triage` | service not in the catalog: no owner, no runbook, so no guessing |
 | `08-malformed` | missing service, bad time, text value | **rejected**, OG-0007 to `eoc-triage` + dead letter | validation: all three errors reported at once; it may still be a real alert, so a person checks it |
 | `09-not-json` | truncated file | **rejected**, OG-0008 to `eoc-triage` + dead letter | file cannot be parsed; the raw text goes in the Opsgenie alert and the rest of the batch continues |
@@ -142,7 +142,7 @@ checklist:
      what: 7% of checkout requests return 5xx over the last 5 minutes
      impact: Customers likely affected: checkout-api is customer-facing in prod (HighErrorRate: some requests fail).
      why: prod, customer-facing, HighErrorRate above threshold; opened OG-0001
-     page: eoc-oncall; not acknowledged in 15 min -> Opsgenie escalates to payments-oncall-lead
+     pages eoc-oncall; not acknowledged in 15 min -> Opsgenie escalates to payments-oncall-lead
      escalate when the runbook says so: payments-oncall-lead
      checklist:
        1. Read the alert: priority P2, what happened, service checkout-api, environment prod.
@@ -176,7 +176,7 @@ checklist:
 ```
 
 `--json` prints the same results as objects (`priority`, `impact`, `owner`, `escalation`,
-`page`, `page_to`, `ack_timeout_minutes`, `reasons`, `checklist`, `opsgenie_id`, ...) plus a
+`page`, `responder`, `ack_timeout_minutes`, `reasons`, `checklist`, `opsgenie_id`, ...) plus a
 `summary` with counts. Each line in `outbox/events.jsonl` is one simulated Opsgenie call with its
 idempotency key, for example:
 
@@ -269,12 +269,18 @@ Evaluated in this order; the first rule that applies wins. Code: `src/alert_tria
 |---|---|---|---|
 | P1 | prod, customer-facing, and `ServiceDown`, `DependencyDown`, or error rate at least 2x threshold | Opsgenie alert to EOC on-call, pages; open an incident | only if not acknowledged in 5 min |
 | P2 | prod, customer-facing, any other known alert | Opsgenie alert to EOC on-call, pages | only if not acknowledged in 15 min |
-| P3 | prod, internal service (not customer-facing) | Opsgenie alert to the owning team, no page | none |
-| P4 | any non-prod environment (staging) | Opsgenie alert to the owning team, no page | none |
+| P3 | prod, internal service (not customer-facing) | Opsgenie alert to EOC on-call, no page | none |
+| P4 | any non-prod environment (staging) | Opsgenie alert to EOC on-call, no page | none |
 
 Opsgenie also uses P1 to P5, so the priority is passed through unchanged.
 
-**Escalation.** A P1/P2 alert goes to the EOC on-call engineer, who investigates. Escalating to
+**First response is always EOC.** Every alert, whatever its priority, goes to the EOC on-call;
+the service team is the `owner` on the alert and the place to escalate to. What differs is how
+loudly EOC is told: `page: true` (P1/P2) means the alert is expected to wake someone up. The
+channel itself (phone, SMS, push, email) comes from each engineer's Opsgenie notification rules,
+so P3/P4 arrive quietly, as push or email, unless someone chooses otherwise.
+
+**Escalation.** The EOC on-call engineer investigates. Escalating to
 the service team (`escalation` in the catalog) is that engineer's decision, when the runbook says
 so or the problem cannot be mitigated; there is no timer on it. The only automatic escalation is
 for a missed alert: if nobody acknowledges it in time, Opsgenie's escalation policy notifies the
@@ -391,7 +397,7 @@ then delays alerts but does not lose them or block triage.
   team.
 - **Incidents:** the P1 step "open an incident" maps to an Opsgenie incident, opened by the
   engineer, not automatically.
-- **Chat:** a message per P1/P2 to the owning team's channel, with the message id stored so updates
+- **Chat:** a message per P1/P2 to the EOC channel, with the message id stored so updates
   edit the same message. A repeated chat message is the least harmful failure, so it is accepted.
 
 **Audit.** Every decision is already a record: input payload, outcome, reasons, rule inputs,
@@ -415,7 +421,8 @@ so "why did this page at 3 a.m.?" has an exact answer.
 
 - Opsgenie is the alerting and paging tool. The exercise asks for "notifications or ticket
   creation", so there is no separate ticketing system: the Opsgenie alert is the unit of work.
-- P1/P2 alerts go to the EOC on-call (`eoc-oncall`); P3/P4 go to the owning team without a page.
+- EOC does first response for every alert, so all priorities go to the EOC on-call (`eoc-oncall`);
+  only P1/P2 page. The owning team is escalated to by EOC when it cannot fix or troubleshoot it.
 - Manual-review and rejected items go to a single EOC triage team (`eoc-triage`), since the owner
   may be unknown.
 - A threshold alert without numbers is incomplete data (manual review), not malformed input,

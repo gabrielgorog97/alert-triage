@@ -47,10 +47,11 @@ def test_new_alert_creates_an_opsgenie_alert_that_pages_eoc(engine, outbox, aler
     assert created["checklist"][2].startswith("Acknowledge Opsgenie alert OG-0001")
 
 
-def test_p3_goes_to_the_owner_without_a_page(engine, outbox, alert_data):
+def test_p3_goes_to_eoc_without_a_page(engine, outbox, alert_data):
     engine.process(alert(alert_data, "a-1", service="report-builder", name="ServiceDown"))
-    assert outbox.actions() == ["create_alert"]
-    assert (outbox.events[0]["page"], outbox.events[0]["responders"]) == (False, ["data-team"])
+    created = outbox.events[0]
+    assert (created["page"], created["responders"]) == (False, ["eoc-oncall"])
+    assert created["owner"] == "data-team"
 
 
 def test_repeated_alert_is_a_duplicate_with_no_new_work(engine, outbox, alert_data):

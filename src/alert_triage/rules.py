@@ -7,8 +7,9 @@ THRESHOLD_ALERTS = ("HighErrorRate", "HighLatency")
 OUTAGE_ALERTS = ("ServiceDown", "DependencyDown")
 PROD_ENVIRONMENTS = ("prod",)
 
-# P1/P2 page the EOC on-call. If the page is not acknowledged in time, the paging tool escalates
-# to the service's escalation contact. Any other escalation is the on-call person's decision.
+# Every alert goes to the EOC on-call first; only P1/P2 page. If a P1/P2 is not acknowledged in
+# time, Opsgenie escalates to the service's escalation contact. Any other escalation is the
+# on-call person's decision.
 EOC_ONCALL = "eoc-oncall"
 ACK_TIMEOUT_MINUTES = {Priority.P1: 5, Priority.P2: 15}
 PAGED_PRIORITIES = tuple(ACK_TIMEOUT_MINUTES)
@@ -34,6 +35,7 @@ def classify(alert: Alert, catalog: dict[str, Service]) -> TriageResult:
             fingerprint=alert.fingerprint,
             impact="Unknown: the rules cannot decide (see why); assess impact by hand.",
             owner=MANUAL_REVIEW_QUEUE,
+            responder=MANUAL_REVIEW_QUEUE,
             reasons=problems,
             runbook=service.runbook if service else None,
         )
@@ -47,7 +49,7 @@ def classify(alert: Alert, catalog: dict[str, Service]) -> TriageResult:
         impact=_impact(alert, priority),
         owner=service.owner,
         escalation=service.escalation,
-        page_to=EOC_ONCALL if priority in PAGED_PRIORITIES else None,
+        responder=EOC_ONCALL,
         ack_timeout_minutes=ACK_TIMEOUT_MINUTES.get(priority),
         page=priority in PAGED_PRIORITIES,
         reasons=[reason],

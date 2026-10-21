@@ -123,6 +123,10 @@ Kept as I worked, newest last. Each entry says what I asked, what came back, and
   the Opsgenie `alias` it deduplicates on, and a closed alert cannot be reopened, so a problem
   that comes back gets a new alert linked to the closed one instead of reopening it. The tests
   were updated to check the Opsgenie calls (`create_alert`, `update_priority`, `close_alert`).
+- Routing, my decision. P3/P4 first went to the owning team. I changed it so EOC gets every
+  alert first, because EOC is the first response for all of them; the team is escalated to only
+  when EOC cannot fix or troubleshoot it. Only P1/P2 page; how a P3/P4 arrives is each
+  engineer's Opsgenie notification rules.
 
 ## Accepted, changed, rejected
 

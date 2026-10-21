@@ -14,7 +14,7 @@ def test_error_rate_above_threshold_is_p2(alert_data, catalog):
     assert result.outcome == Outcome.TRIAGED
     assert result.priority == Priority.P2
     assert result.page is True
-    assert result.page_to == "eoc-oncall"
+    assert result.responder == "eoc-oncall"
     assert result.ack_timeout_minutes == 15
     assert result.owner == "payments-team"
 
@@ -47,7 +47,7 @@ def test_internal_prod_service_is_p3_without_page(alert_data, catalog):
     assert result.priority == Priority.P3
     assert result.page is False
     assert result.ack_timeout_minutes is None
-    assert result.page_to is None
+    assert result.responder == "eoc-oncall"
     assert result.escalation == "data-oncall-lead"
 
 

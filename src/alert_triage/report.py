@@ -16,8 +16,8 @@ LEGEND = [
         "Prod, customers affected. Pages EOC on-call; Opsgenie escalates if not acknowledged "
         "in 15 min.",
     ),
-    ("P3", "Prod, internal service. Opsgenie alert to the owner, no page."),
-    ("P4", "Non-prod (staging). Opsgenie alert to the owner, no page."),
+    ("P3", "Prod, internal service. Alert to EOC on-call, no page."),
+    ("P4", "Non-prod (staging). Alert to EOC on-call, no page."),
     ("review", "The rules cannot decide. A person looks at it; nothing is guessed."),
     ("rejected", "Broken or incomplete data. Dead letter, plus an Opsgenie alert for EOC triage."),
 ]
@@ -112,7 +112,7 @@ def _why(r: TriageResult) -> str:
         extra.append(f"<p><b>Impact:</b> {escape(r.impact)}</p>")
     if r.ack_timeout_minutes:
         extra.append(
-            f"<p><b>Page:</b> {escape(r.page_to or '')}. Not acknowledged in "
+            f"<p><b>Pages:</b> {escape(r.responder or '')}. Not acknowledged in "
             f"{r.ack_timeout_minutes} min: Opsgenie escalates to "
             f"{escape(r.escalation or '')}.</p>"
         )
