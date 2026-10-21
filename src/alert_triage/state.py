@@ -19,6 +19,10 @@ class StateStore:
         self.path = Path(path)
         self.processed: set[str] = set()
         self.open: dict[str, dict] = {}
+        # Recently closed items, so a problem that comes back soon reopens its ticket (flapping).
+        self.recent: dict[str, dict] = {}
+        # Content hash of each unreadable payload -> the triage ticket opened for it.
+        self.rejected: dict[str, str] = {}
         self.next_ticket = 1
         self._load()
 
@@ -30,6 +34,8 @@ class StateStore:
             self.processed = set(data["processed"])
             self.open = data["open"]
             self.next_ticket = data["next_ticket"]
+            self.recent = data.get("recent", {})
+            self.rejected = data.get("rejected", {})
         except (OSError, ValueError, KeyError, TypeError) as exc:
             # Starting from empty would reopen every known problem as a new ticket.
             raise StateError(f"state file {self.path} is unreadable: {exc}") from exc
@@ -44,6 +50,8 @@ class StateStore:
         data = {
             "processed": sorted(self.processed),
             "open": self.open,
+            "recent": self.recent,
+            "rejected": self.rejected,
             "next_ticket": self.next_ticket,
         }
         fd, tmp = tempfile.mkstemp(dir=self.path.parent, prefix=".state-")

@@ -1,0 +1,11 @@
+{
+  "alert_id": "a-1005",
+  "name": "HighErrorRate",
+  "service": "checkout-api",
+  "environment": "prod",
+  "status": "firing",
+  "value": 0.09,
+  "threshold": 0.05,
+  "started_at": "2026-10-21T08:45:00Z",
+  "description": "checkout errors are back a few minutes after recovering"
+}

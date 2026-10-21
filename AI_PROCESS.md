@@ -95,6 +95,23 @@ Kept as I worked, newest last. Each entry says what I asked, what came back, and
   in a browser and fixed two layout problems (ticket ids wrapping, long file names); a test makes
   sure alert text is HTML-escaped.
 
+- Review of my own. Reading the demo output, I questioned four behaviours, and three turned out to
+  be real gaps:
+  - An unreadable alert went only to the dead letter. Nobody was told, and a broken alert can still
+    be a real outage. Now it also opens a ticket in the EOC triage queue with the raw payload, and
+    the same broken payload is recognised by its content so it does not open a second ticket.
+  - A flapping alert (fails, recovers, fails...) opened a new ticket and paged every cycle, which
+    is the "unbounded work" the exercise asks to avoid. Now a problem that comes back within 30
+    minutes of closing reopens the same ticket, and the third reopen flags it as flapping so the
+    owner tunes the alert. I chose 30 minutes and 3 reopens.
+  - Who decides "resolved": the monitoring system, when the metric recovers. The assistant pointed
+    out that auto-closing the ticket conflicts with my checklist rule about closing notes. I kept
+    auto-close on purpose and listed the tension as a limitation.
+  - Duplicates: I asked how we know a repeat did not get worse. That was already handled (a worse
+    repeat raises the priority and pages); a same-id redelivery is the exact same message.
+- Five existing tests failed after these changes because they checked the old behaviour; I
+  rewrote them for the new rules and added tests for reopen, flapping and rejected tickets.
+
 ## Accepted, changed, rejected
 
 **My decisions** (the assistant offered options, I picked): the P1-P4 scale and its rules,
@@ -107,6 +124,9 @@ redelivered ids; manual review for threshold alerts without numbers and for thre
 less; raising priority on a worse duplicate; send-before-save with idempotency keys; content hash
 for dead-letter keys; the exit codes; the impact wording.
 
+**Found by me in review and changed:** unreadable alerts now open a ticket instead of only
+going to the dead letter; flapping alerts reopen one ticket instead of opening new ones.
+
 **Changed:** the checklist draft (order, common evidence, change window anchored to the alert
 start, guardrails); the staging rule, after the first draft assumed a 3-level scale;
 `str, Enum` to `StrEnum` after the linter flagged it.
@@ -118,7 +138,7 @@ priority on a duplicate, because a single lower reading does not prove the probl
 
 ## Verification
 
-- 84 automated tests (`make test`) covering normal alerts, every priority, boundaries
+- 89 automated tests (`make test`) covering normal alerts, every priority, boundaries
   (exactly 2x threshold, just below it, threshold 0), malformed and unreadable input, unknown
   service / environment / alert type, duplicates and redeliveries, priority raise, resolve,
   corrupt state, missing catalog, and the CLI exit codes.

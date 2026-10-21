@@ -18,6 +18,7 @@ EXIT_OK = 0
 EXIT_CONFIG_ERROR = 3
 EXIT_NEEDS_REVIEW = 4
 NEEDS_HUMAN = (Outcome.MANUAL_REVIEW, Outcome.REJECTED)
+MAX_RAW_CHARS = 2000
 
 
 class InputError(Exception):
@@ -75,12 +76,20 @@ def run(args) -> int:
     engine = TriageEngine(catalog, state, FileOutbox(args.outbox), checklists)
     results: list[tuple[str, TriageResult]] = []
     for path in files:
+        # One unreadable file must not stop the rest of the batch.
         try:
-            data = json.loads(path.read_text())
-        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-            # One unreadable file must not stop the rest of the batch.
+            text = path.read_text()
+        except (OSError, UnicodeDecodeError) as exc:
             raw = {"source": str(path)}
             results.append((str(path), engine.reject(raw, [f"cannot read alert file: {exc}"])))
+            continue
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError as exc:
+            raw = {"source": str(path), "raw": text[:MAX_RAW_CHARS]}
+            results.append(
+                (str(path), engine.reject(raw, [f"alert file is not valid JSON: {exc}"]))
+            )
             continue
         for payload in data if isinstance(data, list) else [data]:
             results.append((str(path), engine.process(payload)))
@@ -114,9 +123,8 @@ def _as_table(results, counts, needs_review) -> str:
     for source, r in results:
         if r.outcome == Outcome.REJECTED:
             label, alert, where, name = "--", Path(source).name, "", ""
-            why = f"{r.reasons[0]}" + (
-                f" (+{len(r.reasons) - 1} more)" if len(r.reasons) > 1 else ""
-            )
+            errors = [x for x in r.reasons if not x.startswith(("opened ", "same payload"))]
+            why = errors[0] + (f" (+{len(errors) - 1} more)" if len(errors) > 1 else "")
         else:
             label = r.priority.value if r.priority else "--"
             name, service, env = r.fingerprint.split("|")
@@ -160,8 +168,9 @@ def _as_text(results, counts, needs_review) -> str:
             lines.append("     checklist:")
             lines.extend(f"       {i}. {step}" for i, step in enumerate(r.checklist, 1))
         elif r.outcome == Outcome.REJECTED:
-            lines.append(f"[--] {source}  -> rejected")
+            lines.append(f"[--] {source}  -> rejected  {r.ticket_id}  owner={r.owner}")
             lines.extend(f"     error: {e}" for e in r.reasons)
+            lines.extend(f"       {i}. {step}" for i, step in enumerate(r.checklist, 1))
         else:
             lines.append(head + f"  ({'; '.join(r.reasons)})")
         lines.append("")

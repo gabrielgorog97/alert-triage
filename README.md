@@ -91,7 +91,7 @@ docker run --rm -v "$PWD/examples:/work/examples:ro" alert-triage:local \
 
 `examples/services.yaml` defines three made-up services: `checkout-api` and `search-api`
 (customer-facing, prod and staging) and `report-builder` (internal, prod only).
-`examples/alerts/` has ten files processed in order with one shared state:
+`examples/alerts/` has eleven files processed in order with one shared state:
 
 | File | Alert | Result | Rule that produced it |
 |---|---|---|---|
@@ -104,12 +104,14 @@ docker run --rm -v "$PWD/examples:/work/examples:ro" alert-triage:local \
 | `05-internal` | ServiceDown, report-builder prod | **P3**, ticket only | prod but internal; no customer impact expected |
 | `06-staging` | ServiceDown, search-api staging | **P4**, ticket only | non-prod, even for an outage |
 | `07-unknown-service` | HighErrorRate, loyalty-points prod | **manual_review**, ticket to `eoc-triage` | service not in the catalog: no owner, no runbook, so no guessing |
-| `08-malformed` | missing service, bad time, text value | **rejected**, dead letter | validation: all three errors reported at once |
-| `09-not-json` | truncated file | **rejected**, dead letter | file cannot be parsed; the rest of the batch continues |
+| `08-malformed` | missing service, bad time, text value | **rejected**, ticket T-0007 to `eoc-triage` + dead letter | validation: all three errors reported at once; it may still be a real alert, so a person checks it |
+| `09-not-json` | truncated file | **rejected**, ticket T-0008 to `eoc-triage` + dead letter | file cannot be parsed; the raw text goes in the ticket and the rest of the batch continues |
 | `10-resolved` | resolved, checkout-api prod | **resolved**, T-0001 closed | closes the open item with the same fingerprint |
+| `11-back-again` | HighErrorRate, checkout-api prod, 0.09 | **reopened** T-0001, page | the same problem came back within 30 minutes of closing: same ticket, not a new one |
 
 Exit code is 4, because three alerts need a person. Running `make demo`'s command a second time
-on the same state produces no new tickets or pages: every alert is a redelivery.
+on the same state produces no new tickets or pages: every alert is a redelivery, and the two
+broken files are recognised by their content and point to their existing tickets.
 
 Default output, one line per alert:
 
@@ -124,11 +126,12 @@ P1   a-1003             checkout-api/prod    HighErrorRate   duplicate      T-00
 P3   a-5001             report-builder/prod  ServiceDown     triaged        T-0004  ticket       prod, internal service (not customer-facing)
 P4   a-6001             search-api/staging   ServiceDown     triaged        T-0005  ticket       non-prod environment 'staging'
 --   a-7001             loyalty-points/prod  HighErrorRate   manual_review  T-0006  ticket       service 'loyalty-points' is not in the catalog
---   08-malformed.json                                       rejected                            'service' is required and must be a non-empty string (+2 more)
---   09-not-json.json                                        rejected                            cannot read alert file: Expecting ',' delimiter: line 2 column 1 (char 70)
+--   08-malformed.json                                       rejected       T-0007  ticket       'service' is required and must be a non-empty string (+2 more)
+--   09-not-json.json                                        rejected       T-0008  ticket       alert file is not valid JSON: Expecting ',' delimiter: line 2 column 1 (char 70)
 --   a-1004             checkout-api/prod    HighErrorRate   resolved       T-0001               closed T-0001 after 3 alerts
+P2   a-1005             checkout-api/prod    HighErrorRate   reopened       T-0001  page,ticket  prod, customer-facing, HighErrorRate above threshold; reopened T-0001: came back within 30 min of closing (reopen 1)
 
-Summary: 12 alerts: 2 duplicate, 1 ignored, 1 manual_review, 2 rejected, 1 resolved, 5 triaged. Needs human review: 3.
+Summary: 13 alerts: 2 duplicate, 1 ignored, 1 manual_review, 2 rejected, 1 reopened, 1 resolved, 5 triaged. Needs human review: 3.
 ```
 
 With `--details`, each triaged or manual-review alert also shows impact, escalation and its
@@ -221,12 +224,14 @@ Every alert ends in exactly one of these:
 | `triaged` | priority, owner and checklist decided | ticket, plus a page for P1/P2 |
 | `duplicate` | same alert already open | none, the open item's counter goes up (or a page if priority rises) |
 | `manual_review` | readable, but the rules cannot decide | ticket to the EOC triage queue |
-| `rejected` | cannot be read or validated | stored in the dead letter |
-| `resolved` | closes the open item | resolve note on the existing ticket |
+| `rejected` | cannot be read or validated | ticket to the EOC triage queue with the raw payload, plus the dead letter |
+| `resolved` | monitoring reports recovery; closes the open item | ticket closed |
+| `reopened` | same problem back within 30 minutes of closing | the same ticket reopened, page again for P1/P2 |
 | `ignored` | redelivered `alert_id`, or resolved with nothing open | none |
 
 `manual_review` and `rejected` are different on purpose: "I don't know what this means" is a
-decision for a person, "I can't parse this" is broken data.
+decision for a person, "I can't parse this" is broken data. Neither is dropped: both open a
+ticket for a person, because a broken alert can still be a real outage.
 
 ### Triage rules
 
@@ -234,7 +239,9 @@ Evaluated in this order; the first rule that applies wins. Code: `src/alert_tria
 `engine.py`.
 
 1. **Validation.** `alert_id`, `name`, `service`, `environment`, `status` (`firing` or `resolved`)
-   and `started_at` (ISO 8601) are required and must have the right types. Otherwise: `rejected`.
+   and `started_at` (ISO 8601) are required and must have the right types. Otherwise: `rejected`,
+   with a ticket to `eoc-triage` holding the raw payload. The same broken payload arriving again is
+   recognised by a hash of its content and points to the existing ticket.
 2. **Redelivery.** An `alert_id` that was already processed is ignored, so a retried delivery
    changes nothing.
 3. **Resolved.** `status: resolved` closes the open item with the same fingerprint, if any.
@@ -242,13 +249,16 @@ Evaluated in this order; the first rule that applies wins. Code: `src/alert_tria
    open, it is a `duplicate` until a `resolved` alert closes it. A duplicate never opens a new
    ticket, but if it would get a higher priority than the open item (for example errors grew from
    1.5x to 3x threshold), the item's priority is raised and the new priority pages if it should.
-5. **Manual review** when any of these is true:
+5. **Reopen.** If the same fingerprint was closed less than 30 minutes ago, the closed ticket is
+   reopened instead of creating a new one (outcome `reopened`). After the third reopen the ticket is
+   flagged as flapping: the alert keeps recovering and failing, and its owner should tune it.
+6. **Manual review** when any of these is true:
    - the service is not in the catalog
    - the environment is not one the catalog lists for that service
    - the alert name is not a known type
    - a threshold alert (`HighErrorRate`, `HighLatency`) has no `value` or `threshold`, or the
      threshold is 0 or less
-6. **Priority:**
+7. **Priority:**
 
 | Priority | When | Notify | Escalate if not mitigated |
 |---|---|---|---|
@@ -291,8 +301,9 @@ producing an incomplete checklist.
   `FileOutbox` appends them to `outbox/events.jsonl`; tests use `MemoryOutbox`. A real paging or
   ticketing adapter would implement the same single method.
 - Every notification has an idempotency key: `create_ticket:<fingerprint>:<ticket>`,
-  `page:<alert_id>`, `resolve_ticket:<ticket>`, and `dead_letter:<hash of the payload>` (rejected
-  payloads may have no usable id). Notifications are sent before state is saved, so a crash in
+  `page:<alert_id>`, `resolve_ticket:<ticket>:<reopen count>`, `reopen_ticket:<ticket>:<reopen count>`,
+  and for rejected payloads, which may have no usable id, `dead_letter:<hash>` and
+  `create_ticket:rejected:<hash>` (hash of the payload content). Notifications are sent before state is saved, so a crash in
   between can repeat a notification with the same key, but never lose a page.
 
 ### Code layout
@@ -315,14 +326,15 @@ producing an incomplete checklist.
 make test
 ```
 
-84 tests, no network, each with a temporary state and outbox:
+89 tests, no network, each with a temporary state and outbox:
 
 | Area | File | Examples |
 |---|---|---|
 | Normal alerts | `test_rules.py`, `test_engine.py` | every priority, owner, escalation, impact statement |
 | Boundaries | `test_rules.py` | exactly 2x threshold is P1, just below stays P2, threshold 0 |
-| Malformed | `test_validation.py`, `test_engine.py`, `test_cli.py` | missing fields, wrong types, booleans as numbers, bad time, not JSON, not an object |
+| Malformed | `test_validation.py`, `test_engine.py`, `test_cli.py` | missing fields, wrong types, booleans as numbers, bad time, not JSON, not an object; each gets one triage ticket, also across runs |
 | Duplicate | `test_engine.py`, `test_cli.py` | repeats, redelivery, priority raise, re-running the whole batch |
+| Flapping | `test_engine.py` | reopen within 30 min, new ticket after, flapping flag on the 3rd reopen, survives restart |
 | Ambiguous | `test_rules.py`, `test_engine.py` | unknown service, environment, alert type, missing numbers; repeated ambiguous alert gives one ticket |
 | Failure paths | `test_catalog.py`, `test_checklist.py`, `test_engine.py`, `test_cli.py` | broken catalog, broken templates, corrupt state, missing input, exit codes |
 | Checklists | `test_checklist.py` | evidence before mitigation, placeholders filled, non-prod impact question |
@@ -396,8 +408,14 @@ so "why did this page at 3 a.m.?" has an exact answer.
   but nothing re-pages when it passes.
 - **Priority only goes up.** A lower repeat does not lower the priority; a person decides that.
 - **Unbounded memory.** The processed-id list grows forever; it needs a retention period.
-- **Rejected payloads are re-sent on every run** to the dead letter (with the same key, so a
-  receiver drops them), because they have no reliable id to remember.
+- **Recovery closes the ticket automatically.** When monitoring sends `resolved`, the ticket is
+  closed without a human note. This is a deliberate choice (it matches how alerting tools
+  auto-resolve), but it is in tension with the checklist rule "do not close without writing what
+  happened": the note has to be added after the fact.
+- **Flapping still pages.** A reopened P1/P2 pages again each time, even once flagged as flapping.
+  Safer than going quiet on a real outage, but noisy until the alert is tuned.
+- **Reopen window uses processing time**, not the alert's own timestamps, so replaying old files
+  in a batch treats them as happening now.
 - **Simple severity model.** Latency is never P1, there is no notion of how many customers are
   affected, and only four alert types are known.
 - **Wording not reviewed by owners.** The checklist reflects my own on-call practice; the teams who

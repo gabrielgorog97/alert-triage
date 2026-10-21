@@ -5,6 +5,7 @@ from enum import StrEnum
 
 class Outcome(StrEnum):
     TRIAGED = "triaged"
+    REOPENED = "reopened"
     DUPLICATE = "duplicate"
     MANUAL_REVIEW = "manual_review"
     REJECTED = "rejected"

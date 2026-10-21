@@ -18,10 +18,18 @@ def engine(catalog, tmp_path, outbox):
     return make_engine(catalog, tmp_path, outbox)
 
 
-def make_engine(catalog, tmp_path, outbox):
-    return TriageEngine(
-        catalog, StateStore(tmp_path / "state.json"), outbox, clock=lambda: "2026-10-21T08:00:00"
-    )
+def make_engine(catalog, tmp_path, outbox, clock=lambda: "2026-10-21T08:00:00"):
+    return TriageEngine(catalog, StateStore(tmp_path / "state.json"), outbox, clock=clock)
+
+
+class Clock:
+    """Test clock that only moves when told to."""
+
+    def __init__(self, minute=0):
+        self.minute = minute
+
+    def __call__(self):
+        return f"2026-10-21T08:{self.minute:02d}:00"
 
 
 def alert(alert_data, alert_id, **changes):
@@ -57,14 +65,78 @@ def test_redelivered_alert_id_changes_nothing(engine, outbox, alert_data):
     assert len(outbox.events) == 2
 
 
-def test_resolved_closes_ticket_and_next_alert_opens_a_new_one(engine, outbox, alert_data):
+def test_problem_back_after_the_reopen_window_opens_a_new_ticket(
+    catalog, tmp_path, outbox, alert_data
+):
+    clock = Clock()
+    engine = make_engine(catalog, tmp_path, outbox, clock)
     engine.process(alert(alert_data, "a-1"))
-    resolved = engine.process(alert(alert_data, "a-2", status="resolved"))
-    assert resolved.outcome == Outcome.RESOLVED
+    clock.minute = 5
+    assert engine.process(alert(alert_data, "a-2", status="resolved")).outcome == Outcome.RESOLVED
+    clock.minute = 36
     again = engine.process(alert(alert_data, "a-3"))
     assert again.outcome == Outcome.TRIAGED
     tickets = [e["ticket_id"] for e in outbox.events if e["action"] == "create_ticket"]
     assert tickets == ["T-0001", "T-0002"]
+
+
+def test_problem_back_within_the_window_reopens_the_same_ticket(
+    catalog, tmp_path, outbox, alert_data
+):
+    clock = Clock()
+    engine = make_engine(catalog, tmp_path, outbox, clock)
+    engine.process(alert(alert_data, "a-1"))
+    clock.minute = 5
+    engine.process(alert(alert_data, "a-2", status="resolved"))
+    clock.minute = 20
+    again = engine.process(alert(alert_data, "a-3"))
+
+    assert again.outcome == Outcome.REOPENED
+    assert again.ticket_id == "T-0001"
+    assert outbox.actions() == ["create_ticket", "page", "resolve_ticket", "reopen_ticket", "page"]
+    assert "reopened T-0001" in again.reasons[-1]
+
+
+def test_repeated_reopens_are_marked_flapping(catalog, tmp_path, outbox, alert_data):
+    clock = Clock()
+    engine = make_engine(catalog, tmp_path, outbox, clock)
+    engine.process(alert(alert_data, "a-0"))
+    results = []
+    for i in range(1, 4):
+        clock.minute += 2
+        engine.process(alert(alert_data, f"r-{i}", status="resolved"))
+        clock.minute += 2
+        results.append(engine.process(alert(alert_data, f"f-{i}")))
+
+    assert [r.outcome for r in results] == [Outcome.REOPENED] * 3
+    assert {r.ticket_id for r in results} == {"T-0001"}
+    assert not any("flapping" in x for x in results[1].reasons)
+    assert results[2].reasons[-1].startswith("flapping: reopened 3 times")
+    reopen_events = [e for e in outbox.events if e["action"] == "reopen_ticket"]
+    assert [e["flapping"] for e in reopen_events] == [False, False, True]
+    assert len({e["idempotency_key"] for e in outbox.events}) == len(outbox.events)
+
+
+def test_reopen_survives_a_restart(catalog, tmp_path, outbox, alert_data):
+    clock = Clock()
+    make_engine(catalog, tmp_path, outbox, clock).process(alert(alert_data, "a-1"))
+    clock.minute = 5
+    make_engine(catalog, tmp_path, outbox, clock).process(
+        alert(alert_data, "a-2", status="resolved")
+    )
+    clock.minute = 10
+    again = make_engine(catalog, tmp_path, outbox, clock).process(alert(alert_data, "a-3"))
+    assert again.outcome == Outcome.REOPENED
+
+
+def test_old_closures_are_forgotten(catalog, tmp_path, outbox, alert_data):
+    clock = Clock()
+    engine = make_engine(catalog, tmp_path, outbox, clock)
+    engine.process(alert(alert_data, "a-1"))
+    engine.process(alert(alert_data, "a-2", status="resolved"))
+    clock.minute = 45
+    engine.process(alert(alert_data, "b-1", service="report-builder"))
+    assert engine.state.recent == {}
 
 
 def test_resolved_with_nothing_open_is_ignored(engine, outbox, alert_data):
@@ -89,24 +161,37 @@ def test_better_duplicate_keeps_the_higher_priority(engine, outbox, alert_data):
     assert outbox.actions() == ["create_ticket", "page"]
 
 
-def test_malformed_alert_goes_to_dead_letter(engine, outbox):
+def test_malformed_alert_is_kept_and_ticketed_for_a_person(engine, outbox):
     result = engine.process({"alert_id": "bad-1", "name": "HighErrorRate"})
     assert result.outcome == Outcome.REJECTED
-    assert outbox.actions() == ["dead_letter"]
+    assert outbox.actions() == ["dead_letter", "create_ticket"]
     assert outbox.events[0]["payload"]["alert_id"] == "bad-1"
+    ticket = outbox.events[1]
+    assert ticket["owner"] == "eoc-triage"
+    assert ticket["payload"]["alert_id"] == "bad-1"
+    assert ticket["checklist"][0].startswith("Do not assume it is harmless")
+    assert result.ticket_id == "T-0001"
 
 
 def test_non_object_payload_goes_to_dead_letter(engine, outbox):
     assert engine.process(["not", "an", "object"]).outcome == Outcome.REJECTED
 
 
-def test_dead_letter_key_depends_on_content_not_on_alert_id(engine, outbox):
-    engine.process({"name": "HighErrorRate"})
-    engine.process({"name": "HighLatency"})
-    engine.process({"name": "HighErrorRate"})
-    keys = [e["idempotency_key"] for e in outbox.events]
-    assert keys[0] != keys[1]
-    assert keys[0] == keys[2]
+def test_rejected_payloads_are_told_apart_by_content(engine, outbox):
+    first = engine.process({"name": "HighErrorRate"})
+    second = engine.process({"name": "HighLatency"})
+    repeat = engine.process({"name": "HighErrorRate"})
+
+    assert (first.ticket_id, second.ticket_id) == ("T-0001", "T-0002")
+    assert repeat.ticket_id == "T-0001"
+    assert "same payload already ticketed as T-0001" in repeat.reasons
+    assert outbox.actions() == ["dead_letter", "create_ticket"] * 2
+
+
+def test_rejected_payload_is_remembered_across_runs(catalog, tmp_path, outbox):
+    make_engine(catalog, tmp_path, outbox).process({"name": "HighErrorRate"})
+    make_engine(catalog, tmp_path, outbox).process({"name": "HighErrorRate"})
+    assert outbox.actions() == ["dead_letter", "create_ticket"]
 
 
 def test_repeated_ambiguous_alert_creates_one_review_ticket(engine, outbox, alert_data):

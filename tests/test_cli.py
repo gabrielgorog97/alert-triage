@@ -37,6 +37,13 @@ def test_examples_end_to_end(tmp_path, capsys):
         "triaged",
         "ignored",
     ]
+    assert by_id["a-1005"]["outcome"] == "reopened"
+    assert by_id["a-1005"]["ticket_id"] == "T-0001"
+    rejected = [r for r in report["results"] if r["outcome"] == "rejected"]
+    assert [(r["ticket_id"], r["owner"]) for r in rejected] == [
+        ("T-0007", "eoc-triage"),
+        ("T-0008", "eoc-triage"),
+    ]
     assert report["summary"]["rejected"] == 2
     assert report["summary"]["needs_review"] == 3
 
@@ -51,8 +58,9 @@ def test_second_run_on_same_input_creates_no_new_work(tmp_path, capsys):
     accepted = [r for r in report["results"] if r["outcome"] != "rejected"]
     assert all(r["outcome"] == "ignored" for r in accepted)
     rerun_events = (tmp_path / "outbox" / "events.jsonl").read_text().splitlines()
-    new_actions = {json.loads(e)["action"] for e in rerun_events[len(events) :]}
-    assert new_actions == {"dead_letter"}
+    assert rerun_events == events
+    rejected = [r for r in report["results"] if r["outcome"] == "rejected"]
+    assert all("already ticketed" in r["reasons"][-1] for r in rejected)
 
 
 def test_default_output_is_one_line_per_alert(tmp_path, capsys):
@@ -130,7 +138,7 @@ def test_unreadable_file_does_not_stop_the_batch(tmp_path, capsys):
     code = run(tmp_path, tmp_path / "a.json", tmp_path / "b.json")
     out = capsys.readouterr().out
     assert code == EXIT_NEEDS_REVIEW
-    assert "cannot read alert file" in out
+    assert "alert file is not valid JSON" in out
     assert "a-2001" in out and "triaged" in out
 
 

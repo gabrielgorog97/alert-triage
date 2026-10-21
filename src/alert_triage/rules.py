@@ -10,6 +10,8 @@ PROD_ENVIRONMENTS = ("prod",)
 ESCALATE_AFTER_MINUTES = {Priority.P1: 15, Priority.P2: 30}
 PAGED_PRIORITIES = (Priority.P1, Priority.P2)
 MANUAL_REVIEW_QUEUE = "eoc-triage"
+REOPEN_WINDOW_MINUTES = 30
+FLAPPING_AFTER_REOPENS = 3
 CUSTOMER_EFFECT = {
     "HighErrorRate": "some requests fail",
     "HighLatency": "requests are slow",

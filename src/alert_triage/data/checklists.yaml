@@ -63,3 +63,9 @@ manual_review:
   - "Decide the priority by hand and write the reason in ticket {ticket_id}."
   - "When handing over, include what you checked and why the alert was unclear."
   - "Remove the ambiguity for next time: add the service, environment or alert type to the catalog or fix the alert definition."
+
+# Unreadable or invalid alert. It may still be real, so a person looks at the raw payload.
+rejected:
+  - "Do not assume it is harmless: read the raw payload in ticket {ticket_id} and find which monitor sent it."
+  - "If it mentions a production service or an outage, treat it as urgent and check that service's dashboards now."
+  - "Ask the owner of that monitor to fix the alert format, using the errors listed in the ticket."

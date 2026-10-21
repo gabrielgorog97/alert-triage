@@ -23,7 +23,7 @@ def load_checklists(path: Path | None = None) -> dict:
         raise ChecklistError(f"cannot load checklists: {exc}") from exc
 
     required = ("assess", "impact", "evidence_common", "alerts", "guardrail", "escalate", "close")
-    for key in (*required, "manual_review"):
+    for key in (*required, "manual_review", "rejected"):
         if not isinstance(data, dict) or key not in data:
             raise ChecklistError(f"checklists are missing '{key}'")
     for key in ("prod", "non_prod"):
@@ -70,3 +70,7 @@ def build_checklist(templates: dict, result: TriageResult, alert: Alert, ticket_
         steps.extend(templates["close"])
 
     return [step.format(**values) for step in steps]
+
+
+def rejected_checklist(templates: dict, ticket_id: str) -> list:
+    return [step.format(ticket_id=ticket_id) for step in templates["rejected"]]

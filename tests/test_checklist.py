@@ -59,7 +59,7 @@ def test_missing_alert_type_in_templates_is_an_error(tmp_path):
     path = tmp_path / "checklists.yaml"
     path.write_text(
         "assess: []\nimpact: {prod: x, non_prod: y}\nevidence_common: []\nalerts: {}\n"
-        "guardrail: x\nescalate: {}\nclose: []\nmanual_review: []\n"
+        "guardrail: x\nescalate: {}\nclose: []\nmanual_review: []\nrejected: []\n"
     )
     with pytest.raises(ChecklistError, match="HighErrorRate"):
         load_checklists(path)
@@ -69,7 +69,7 @@ def test_impact_without_non_prod_step_is_an_error(tmp_path):
     path = tmp_path / "checklists.yaml"
     path.write_text(
         "assess: []\nimpact: {prod: x}\nevidence_common: []\nalerts: {}\n"
-        "guardrail: x\nescalate: {}\nclose: []\nmanual_review: []\n"
+        "guardrail: x\nescalate: {}\nclose: []\nmanual_review: []\nrejected: []\n"
     )
     with pytest.raises(ChecklistError, match="non_prod"):
         load_checklists(path)
