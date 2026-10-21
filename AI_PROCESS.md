@@ -47,6 +47,20 @@ Kept as I worked, newest last. Each entry says what I asked, what came back, and
 - Checklists. Asked for checklist templates in a data file (not code) so operators can edit them.
   The assistant wrote a first draft of the wording (assess, evidence, mitigate, escalate, close,
   plus a manual-review checklist); I reviewed it against what I do on shift (see next entry).
+- My changes to the checklist draft, from how I handle alerts at work:
+  - First step is reading the alert (priority, description, service, environment) and opening the
+    runbook before anything else; the draft started with acknowledging the ticket.
+  - Evidence I collect for every alert type, not only some: Grafana dashboards, Kubernetes state,
+    logs, testing the service myself as a customer, recent code/deploy changes, and planned
+    maintenance. These became a common evidence section.
+  - Change window: "the hours before the alert started", anchored to `started_at`, instead of a
+    fixed "last 2 hours" from now.
+  - Explicit limits: do not do steps that belong to another team (escalate instead); never escalate
+    without the evidence and what was already checked; never close without writing what was
+    checked, what happened and how it was resolved.
+- Adding the guardrail made two tests fail: they searched for the text "escalate to", which now
+  also appears in the guardrail. The checklist was right; the tests were too loose and now match
+  the exact escalation step.
 
 ## Accepted, changed, rejected
 

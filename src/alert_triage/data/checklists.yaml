@@ -1,51 +1,61 @@
 # First-response checklists. Placeholders in {braces} are filled from the alert and the catalog.
-# Order matters: assess, collect evidence, then change something.
+# Order matters: read the alert and runbook, collect evidence, then change something.
 
 assess:
-  - "Acknowledge ticket {ticket_id} ({priority}) so others know it is being handled."
-  - "Check customer impact: is {service} in {environment} failing for users right now? Use the service dashboard and synthetic checks."
+  - "Read the alert: priority {priority}, what happened, service {service}, environment {environment}."
+  - "Open the runbook before doing anything else: {runbook}"
+  - "Acknowledge ticket {ticket_id} so others know it is being handled."
+  - "Check customer impact: is {service} in {environment} failing for users right now?"
+
+# Evidence every alert type needs, collected before any change.
+evidence_common:
+  - "Save the relevant Grafana dashboard panels (traffic, errors, latency) for the time around {started_at}."
+  - "Check the Kubernetes state of {service}: pod status, restarts, recent events."
+  - "Collect logs from {service} for the time around {started_at}; put a sample in the ticket."
+  - "Test {service} yourself as a customer would (call the affected endpoint) and record the result."
+  - "Check code, deploy and config changes to {service} in the hours before {started_at}."
+  - "Check whether planned maintenance or a change window covers {service} or its dependencies."
 
 alerts:
   HighErrorRate:
     evidence:
-      - "Note the current error rate ({value} vs threshold {threshold}) and when it started ({started_at})."
-      - "List deployments and config changes to {service} in the last 2 hours."
-      - "Group error logs by endpoint and status code; save a sample in the ticket."
+      - "Note the error rate ({value} vs threshold {threshold}) and group errors by endpoint and status code."
       - "Check the dependencies listed in the runbook for errors at the same time."
     mitigate:
-      - "If a deploy or config change lines up with the start time, roll it back using the runbook: {runbook}"
+      - "If a change lines up with the start time, follow the runbook's rollback procedure."
   HighLatency:
     evidence:
-      - "Note the current latency ({value} vs threshold {threshold}) and which endpoints are slow."
-      - "Check saturation: CPU, memory, connection pools, queue depth."
-      - "Check for a traffic spike and for deployments in the last 2 hours."
+      - "Note the latency ({value} vs threshold {threshold}) and which endpoints are slow."
+      - "Check saturation: CPU, memory, connection pools, queue depth, and whether traffic spiked."
       - "Check latency of downstream dependencies (database, other APIs)."
     mitigate:
-      - "If saturated, scale out as the runbook describes; if a deploy lines up with the start, roll it back: {runbook}"
+      - "If saturated, scale out as the runbook describes; if a change lines up with the start, follow the rollback procedure."
   DependencyDown:
     evidence:
       - "Confirm which dependency is failing from a second source (its status page or health check)."
       - "Check whether the failure is total or partial, and which features of {service} rely on it."
       - "Check whether the dependency's owners already have an open incident."
     mitigate:
-      - "Use the runbook's degraded mode or failover if one exists: {runbook}. Restarting {service} will not fix a dependency."
+      - "Use the runbook's degraded mode or failover if one exists. Restarting {service} will not fix a dependency."
   ServiceDown:
     evidence:
       - "Confirm it is really down from a second signal (synthetic check, load balancer health), not a monitoring gap."
-      - "Check instance or pod status, restarts and crash loops."
-      - "List deployments and infrastructure changes in the last 2 hours."
     mitigate:
-      - "Follow the runbook's restart or rollback procedure: {runbook}"
+      - "Follow the runbook's restart or rollback procedure."
+
+# Always shown right before the mitigation steps.
+guardrail: "Only do steps the runbook gives to the on-call / EOC role. If a step belongs to another team (for example engineers restart the service), escalate to them instead of doing it yourself."
 
 escalate:
-  paged: "If not mitigated within {escalate_after_minutes} minutes, escalate to {escalation}."
+  paged: "If not mitigated within {escalate_after_minutes} minutes, escalate to {escalation}. Include what you checked, the evidence collected, and what you already tried."
   p1: "Open an incident and assign someone to customer communication."
 
 close:
-  - "Record what you saw and what you changed in ticket {ticket_id} before closing it."
+  - "Before closing ticket {ticket_id}, write down what was checked, what happened, and how it was resolved. Do not close it without this."
 
 manual_review:
   - "Do not change anything yet. Confirm the alert is real by checking the monitor that sent it."
   - "Find the owner of '{service}': search the service inventory, ask in the EOC channel."
   - "Decide the priority by hand and write the reason in ticket {ticket_id}."
+  - "When handing over, include what you checked and why the alert was unclear."
   - "Remove the ambiguity for next time: add the service, environment or alert type to the catalog or fix the alert definition."

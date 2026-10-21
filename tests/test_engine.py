@@ -33,7 +33,7 @@ def test_new_alert_opens_ticket_and_pages(engine, outbox, alert_data):
     assert result.outcome == Outcome.TRIAGED
     assert outbox.actions() == ["create_ticket", "page"]
     assert outbox.events[0]["ticket_id"] == "T-0001"
-    assert outbox.events[0]["checklist"][0].startswith("Acknowledge ticket T-0001")
+    assert outbox.events[0]["checklist"][2].startswith("Acknowledge ticket T-0001")
 
 
 def test_p3_opens_ticket_without_page(engine, outbox, alert_data):

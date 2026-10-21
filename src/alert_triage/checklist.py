@@ -22,7 +22,8 @@ def load_checklists(path: Path | None = None) -> dict:
     except (OSError, yaml.YAMLError) as exc:
         raise ChecklistError(f"cannot load checklists: {exc}") from exc
 
-    for key in ("assess", "alerts", "escalate", "close", "manual_review"):
+    required = ("assess", "evidence_common", "alerts", "guardrail", "escalate", "close")
+    for key in (*required, "manual_review"):
         if not isinstance(data, dict) or key not in data:
             raise ChecklistError(f"checklists are missing '{key}'")
     for name in KNOWN_ALERTS:
@@ -50,7 +51,13 @@ def build_checklist(templates: dict, result: TriageResult, alert: Alert, ticket_
         steps = list(templates["manual_review"])
     else:
         per_alert = templates["alerts"][alert.name]
-        steps = [*templates["assess"], *per_alert["evidence"], *per_alert["mitigate"]]
+        steps = [
+            *templates["assess"],
+            *templates["evidence_common"],
+            *per_alert["evidence"],
+            templates["guardrail"],
+            *per_alert["mitigate"],
+        ]
         if result.escalate_after_minutes:
             steps.append(templates["escalate"]["paged"])
         if result.priority == Priority.P1:

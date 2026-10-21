@@ -17,10 +17,12 @@ def checklist_for(templates, catalog, alert_data, **changes):
 
 def test_evidence_comes_before_mitigation(templates, catalog, alert_data):
     steps = checklist_for(templates, catalog, alert_data)
-    evidence = next(i for i, s in enumerate(steps) if s.startswith("List deployments"))
-    rollback = next(i for i, s in enumerate(steps) if "roll it back" in s)
-    assert steps[0].startswith("Acknowledge ticket T-0042 (P2)")
-    assert evidence < rollback
+    evidence = next(i for i, s in enumerate(steps) if s.startswith("Check code, deploy"))
+    guardrail = next(i for i, s in enumerate(steps) if s.startswith("Only do steps the runbook"))
+    rollback = next(i for i, s in enumerate(steps) if "rollback procedure" in s)
+    assert steps[0].startswith("Read the alert: priority P2")
+    assert steps[1].startswith("Open the runbook")
+    assert evidence < guardrail < rollback
 
 
 def test_placeholders_are_filled(templates, catalog, alert_data):
@@ -34,12 +36,12 @@ def test_p1_has_escalation_and_incident_steps(templates, catalog, alert_data):
     steps = checklist_for(templates, catalog, alert_data, name="ServiceDown")
     assert "within 15 minutes, escalate to payments-oncall-lead" in "\n".join(steps)
     assert any(s.startswith("Open an incident") for s in steps)
-    assert steps[-1].startswith("Record what you saw")
+    assert steps[-1].startswith("Before closing ticket T-0042")
 
 
 def test_p3_has_no_escalation_step(templates, catalog, alert_data):
     steps = checklist_for(templates, catalog, alert_data, service="report-builder")
-    assert not any("escalate to" in s for s in steps)
+    assert not any(s.startswith("If not mitigated") for s in steps)
 
 
 def test_manual_review_checklist_says_do_not_change_anything(templates, catalog, alert_data):
@@ -55,6 +57,22 @@ def test_every_known_alert_type_renders(templates, catalog, alert_data, name):
 
 def test_missing_alert_type_in_templates_is_an_error(tmp_path):
     path = tmp_path / "checklists.yaml"
-    path.write_text("assess: []\nalerts: {}\nescalate: {}\nclose: []\nmanual_review: []\n")
+    path.write_text(
+        "assess: []\nevidence_common: []\nalerts: {}\nguardrail: x\n"
+        "escalate: {}\nclose: []\nmanual_review: []\n"
+    )
     with pytest.raises(ChecklistError, match="HighErrorRate"):
+        load_checklists(path)
+
+
+def test_escalation_asks_for_the_evidence_already_collected(templates, catalog, alert_data):
+    steps = checklist_for(templates, catalog, alert_data)
+    escalation = next(s for s in steps if s.startswith("If not mitigated"))
+    assert "what you checked" in escalation
+
+
+def test_missing_section_is_an_error(tmp_path):
+    path = tmp_path / "checklists.yaml"
+    path.write_text("assess: []\n")
+    with pytest.raises(ChecklistError, match="evidence_common"):
         load_checklists(path)
