@@ -53,14 +53,14 @@ class TriageResult:
     outcome: Outcome
     fingerprint: str | None = None
     description: str | None = None
-    ticket_id: str | None = None
+    opsgenie_id: str | None = None
     priority: Priority | None = None
     impact: str | None = None
     owner: str | None = None
     escalation: str | None = None
     page_to: str | None = None
     ack_timeout_minutes: int | None = None
-    notify: list[str] = field(default_factory=list)
+    page: bool = False
     reasons: list[str] = field(default_factory=list)
     checklist: list[str] = field(default_factory=list)
     runbook: str | None = None

@@ -4,7 +4,7 @@
 assess:
   - "Read the alert: priority {priority}, what happened, service {service}, environment {environment}."
   - "Open the runbook before doing anything else: {runbook}"
-  - "Acknowledge ticket {ticket_id} so others know it is being handled."
+  - "Acknowledge Opsgenie alert {opsgenie_id} so others know it is being handled."
 
 # Non-prod has no real customers, so the question there is who is blocked.
 impact:
@@ -15,7 +15,7 @@ impact:
 evidence_common:
   - "Save the relevant Grafana dashboard panels (traffic, errors, latency) for the time around {started_at}."
   - "Check the Kubernetes state of {service}: pod status, restarts, recent events."
-  - "Collect logs from {service} for the time around {started_at}; put a sample in the ticket."
+  - "Collect logs from {service} for the time around {started_at}; add a sample as a note on the Opsgenie alert."
   - "Test {service} yourself as a customer would (call the affected endpoint) and record the result."
   - "Check code, deploy and config changes to {service} in the hours before {started_at}."
   - "Check whether planned maintenance or a change window covers {service} or its dependencies."
@@ -51,24 +51,24 @@ alerts:
 guardrail: "Only do steps the runbook gives to the on-call / EOC role. If a step belongs to another team (for example engineers restart the service), escalate to them instead of doing it yourself."
 
 # Escalation is a decision of the on-call person, following the runbook. The only automatic
-# escalation is the paging tool's, when nobody acknowledges the page in time.
+# escalation is Opsgenie's escalation policy, when nobody acknowledges the alert in time.
 escalate:
-  ack: "Acknowledge the page within {ack_timeout_minutes} minutes. If nobody acknowledges it, it escalates automatically to {escalation}."
+  ack: "If nobody acknowledges the alert within {ack_timeout_minutes} minutes, Opsgenie escalates it automatically to {escalation}."
   manual: "If the runbook says to escalate, or you cannot mitigate it, escalate to {escalation}. Include what you checked, the evidence collected, and what you already tried."
-  p1: "Open an incident and assign someone to customer communication."
+  p1: "Open an Opsgenie incident and assign someone to customer communication."
 
 close:
-  - "Before closing ticket {ticket_id}, write down what was checked, what happened, and how it was resolved. Do not close it without this."
+  - "Before closing Opsgenie alert {opsgenie_id}, add a note with what was checked, what happened, and how it was resolved. Do not close it without this."
 
 manual_review:
   - "Do not change anything yet. Confirm the alert is real by checking the monitor that sent it."
   - "Find the owner of '{service}': search the service inventory, ask in the EOC channel."
-  - "Decide the priority by hand and write the reason in ticket {ticket_id}."
+  - "Decide the priority by hand, set it on Opsgenie alert {opsgenie_id}, and add a note with the reason."
   - "When handing over, include what you checked and why the alert was unclear."
   - "Remove the ambiguity for next time: add the service, environment or alert type to the catalog or fix the alert definition."
 
 # Unreadable or invalid alert. It may still be real, so a person looks at the raw payload.
 rejected:
-  - "Do not assume it is harmless: read the raw payload in ticket {ticket_id} and find which monitor sent it."
+  - "Do not assume it is harmless: read the raw payload attached to Opsgenie alert {opsgenie_id} and find which monitor sent it."
   - "If it mentions a production service or an outage, treat it as urgent and check that service's dashboards now."
-  - "Ask the owner of that monitor to fix the alert format, using the errors listed in the ticket."
+  - "Ask the owner of that monitor to fix the alert format, using the errors listed in the Opsgenie alert."

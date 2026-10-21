@@ -22,10 +22,10 @@ def _utcnow() -> str:
 
 class TriageEngine:
     """Runs one alert through the steps in the README: validate, redelivery, resolved, duplicate,
-    classify.
+    classify. The output is Opsgenie alerts (simulated through the notifier).
 
     Notifications are sent before state is saved. If the process dies in between, the retry sends
-    them again with the same idempotency keys (ticket ids come from saved state, so they repeat
+    them again with the same idempotency keys (Opsgenie ids come from saved state, so they repeat
     too), and the receiver drops the repeat. The other order could lose a page."""
 
     def __init__(
@@ -70,7 +70,7 @@ class TriageEngine:
         return result
 
     def reject(self, payload, errors: list[str]) -> TriageResult:
-        """Keep an unusable payload and open a triage ticket: it may still be a real alert."""
+        """Keep an unusable payload and open an Opsgenie alert for EOC: it may still be real."""
         alert_id = payload.get("alert_id") if isinstance(payload, dict) else None
         # Rejected payloads may have no usable id, so they are recognised by their content.
         digest = hashlib.sha256(
@@ -80,14 +80,12 @@ class TriageEngine:
             alert_id=str(alert_id),
             outcome=Outcome.REJECTED,
             owner=MANUAL_REVIEW_QUEUE,
-            notify=["ticket"],
             reasons=list(errors),
         )
 
         if digest in self.state.rejected:
-            result.ticket_id = self.state.rejected[digest]
-            result.notify = []
-            result.reasons.append(f"same payload already ticketed as {result.ticket_id}")
+            result.opsgenie_id = self.state.rejected[digest]
+            result.reasons.append(f"same payload already in Opsgenie as {result.opsgenie_id}")
             return result
 
         now = self.clock()
@@ -96,15 +94,18 @@ class TriageEngine:
             f"dead_letter:{digest}",
             {"received_at": now, "errors": errors, "payload": payload},
         )
-        ticket_id = self.state.new_ticket_id()
-        result.ticket_id = ticket_id
-        result.checklist = rejected_checklist(self.checklists, ticket_id)
+        opsgenie_id = self.state.new_opsgenie_id()
+        result.opsgenie_id = opsgenie_id
+        result.checklist = rejected_checklist(self.checklists, opsgenie_id)
         self.notifier.send(
-            "create_ticket",
-            f"create_ticket:rejected:{digest}",
+            "create_alert",
+            f"create_alert:rejected:{digest}",
             {
-                "ticket_id": ticket_id,
+                "opsgenie_id": opsgenie_id,
+                "alias": f"rejected:{digest}",
                 "created_at": now,
+                "responders": [MANUAL_REVIEW_QUEUE],
+                "page": False,
                 "outcome": result.outcome.value,
                 "owner": result.owner,
                 "errors": errors,
@@ -112,56 +113,44 @@ class TriageEngine:
                 "checklist": result.checklist,
             },
         )
-        self.state.rejected[digest] = ticket_id
+        self.state.rejected[digest] = opsgenie_id
         self.state.save()
-        result.reasons.append(f"opened {ticket_id}")
+        result.reasons.append(f"opened {opsgenie_id}")
         return result
 
     def _open(self, alert) -> TriageResult:
         result = classify(alert, self.catalog)
         result.description = alert.description
         now = self.clock()
+        # Opsgenie cannot reopen a closed alert, so a problem that comes back gets a new alert
+        # linked to the previous one.
         recent = self._recently_closed(alert.fingerprint, now)
         reopens = recent["reopens"] + 1 if recent else 0
-        ticket_id = recent["ticket_id"] if recent else self.state.new_ticket_id()
-        result.ticket_id = ticket_id
-        result.checklist = build_checklist(self.checklists, result, alert, ticket_id)
+        flapping = reopens >= FLAPPING_AFTER_REOPENS
+        opsgenie_id = self.state.new_opsgenie_id()
+        result.opsgenie_id = opsgenie_id
+        result.checklist = build_checklist(self.checklists, result, alert, opsgenie_id)
+        if recent and result.outcome == Outcome.TRIAGED:
+            result.outcome = Outcome.REOPENED
 
-        if recent:
-            if result.outcome == Outcome.TRIAGED:
-                result.outcome = Outcome.REOPENED
-            flapping = reopens >= FLAPPING_AFTER_REOPENS
-            self.notifier.send(
-                "reopen_ticket",
-                f"reopen_ticket:{ticket_id}:{reopens}",
-                {
-                    "ticket_id": ticket_id,
-                    "reopened_at": now,
-                    "alert": alert.alert_id,
-                    "reopens": reopens,
-                    "flapping": flapping,
-                    **_summary(result),
-                },
-            )
-        else:
-            self.notifier.send(
-                "create_ticket",
-                f"create_ticket:{alert.fingerprint}:{ticket_id}",
-                {
-                    "ticket_id": ticket_id,
-                    "created_at": now,
-                    "alert": alert.alert_id,
-                    **_summary(result),
-                },
-            )
-        if "page" in result.notify:
-            self.notifier.send(
-                "page",
-                f"page:{alert.alert_id}",
-                {"ticket_id": ticket_id, "sent_at": now, **_summary(result)},
-            )
+        self.notifier.send(
+            "create_alert",
+            f"create_alert:{alert.fingerprint}:{opsgenie_id}",
+            {
+                "opsgenie_id": opsgenie_id,
+                "alias": alert.fingerprint,
+                "created_at": now,
+                "alert": alert.alert_id,
+                "responders": [result.page_to or result.owner],
+                "page": result.page,
+                "previous_alert": recent["opsgenie_id"] if recent else None,
+                "reopens": reopens,
+                "tags": ["flapping"] if flapping else [],
+                **_summary(result),
+            },
+        )
         self.state.open[alert.fingerprint] = {
-            "ticket_id": ticket_id,
+            "opsgenie_id": opsgenie_id,
             "outcome": result.outcome.value,
             "priority": result.priority.value if result.priority else None,
             "first_alert_id": alert.alert_id,
@@ -170,16 +159,15 @@ class TriageEngine:
             "count": 1,
             "reopens": reopens,
         }
-        if not recent:
-            result.reasons.append(f"opened {ticket_id}")
-            return result
-        result.reasons.append(
-            f"reopened {ticket_id}: came back within {REOPEN_WINDOW_MINUTES} min of closing "
-            f"(reopen {reopens})"
-        )
-        if reopens >= FLAPPING_AFTER_REOPENS:
+        result.reasons.append(f"opened {opsgenie_id}")
+        if recent:
             result.reasons.append(
-                f"flapping: reopened {reopens} times; its owner should tune the alert definition"
+                f"back within {REOPEN_WINDOW_MINUTES} min of closing {recent['opsgenie_id']}, "
+                f"linked to it (reopen {reopens})"
+            )
+        if flapping:
+            result.reasons.append(
+                f"flapping: back {reopens} times; its owner should tune the alert definition"
             )
         return result
 
@@ -206,9 +194,9 @@ class TriageEngine:
             alert_id=alert.alert_id,
             outcome=Outcome.DUPLICATE,
             fingerprint=alert.fingerprint,
-            ticket_id=item["ticket_id"],
+            opsgenie_id=item["opsgenie_id"],
             priority=Priority(item["priority"]) if item["priority"] else None,
-            reasons=[f"already open as {item['ticket_id']}, seen {item['count']} times"],
+            reasons=[f"already open as {item['opsgenie_id']}, seen {item['count']} times"],
         )
 
         # A duplicate must not hide a problem that got worse, e.g. errors going from 1.5x to 3x.
@@ -217,17 +205,18 @@ class TriageEngine:
             old = item["priority"]
             item["priority"] = fresh.priority.value
             result.priority = fresh.priority
+            result.page = fresh.page
             result.reasons.append(f"priority raised {old} -> {fresh.priority.value}")
-            if "page" in fresh.notify:
-                self.notifier.send(
-                    "page",
-                    f"page:{alert.alert_id}",
-                    {
-                        "ticket_id": item["ticket_id"],
-                        "sent_at": item["last_seen"],
-                        **_summary(fresh),
-                    },
-                )
+            self.notifier.send(
+                "update_priority",
+                f"update_priority:{alert.alert_id}",
+                {
+                    "opsgenie_id": item["opsgenie_id"],
+                    "updated_at": item["last_seen"],
+                    "page": fresh.page,
+                    **_summary(fresh),
+                },
+            )
         return result
 
     def _resolve(self, alert) -> TriageResult:
@@ -241,12 +230,17 @@ class TriageEngine:
             )
         now = self.clock()
         self.notifier.send(
-            "resolve_ticket",
-            f"resolve_ticket:{item['ticket_id']}:{item.get('reopens', 0)}",
-            {"ticket_id": item["ticket_id"], "resolved_at": now, "seen": item["count"]},
+            "close_alert",
+            f"close_alert:{item['opsgenie_id']}",
+            {
+                "opsgenie_id": item["opsgenie_id"],
+                "closed_at": now,
+                "seen": item["count"],
+                "note": f"closed by the monitor's resolved event after {item['count']} alerts",
+            },
         )
         self.state.recent[alert.fingerprint] = {
-            "ticket_id": item["ticket_id"],
+            "opsgenie_id": item["opsgenie_id"],
             "closed_at": now,
             "reopens": item.get("reopens", 0),
         }
@@ -254,8 +248,8 @@ class TriageEngine:
             alert_id=alert.alert_id,
             outcome=Outcome.RESOLVED,
             fingerprint=alert.fingerprint,
-            ticket_id=item["ticket_id"],
-            reasons=[f"closed {item['ticket_id']} after {item['count']} alerts"],
+            opsgenie_id=item["opsgenie_id"],
+            reasons=[f"closed {item['opsgenie_id']} after {item['count']} alerts"],
         )
 
 

@@ -38,11 +38,12 @@ def test_examples_end_to_end(tmp_path, capsys):
         "ignored",
     ]
     assert by_id["a-1005"]["outcome"] == "reopened"
-    assert by_id["a-1005"]["ticket_id"] == "T-0001"
+    assert by_id["a-1005"]["opsgenie_id"] == "OG-0009"
+    assert "closing OG-0001" in by_id["a-1005"]["reasons"][-1]
     rejected = [r for r in report["results"] if r["outcome"] == "rejected"]
-    assert [(r["ticket_id"], r["owner"]) for r in rejected] == [
-        ("T-0007", "eoc-triage"),
-        ("T-0008", "eoc-triage"),
+    assert [(r["opsgenie_id"], r["owner"]) for r in rejected] == [
+        ("OG-0007", "eoc-triage"),
+        ("OG-0008", "eoc-triage"),
     ]
     assert report["summary"]["rejected"] == 2
     assert report["summary"]["needs_review"] == 3
@@ -60,7 +61,7 @@ def test_second_run_on_same_input_creates_no_new_work(tmp_path, capsys):
     rerun_events = (tmp_path / "outbox" / "events.jsonl").read_text().splitlines()
     assert rerun_events == events
     rejected = [r for r in report["results"] if r["outcome"] == "rejected"]
-    assert all("already ticketed" in r["reasons"][-1] for r in rejected)
+    assert all("already in Opsgenie" in r["reasons"][-1] for r in rejected)
 
 
 def test_default_output_is_one_line_per_alert(tmp_path, capsys):
@@ -72,17 +73,18 @@ def test_default_output_is_one_line_per_alert(tmp_path, capsys):
         "SERVICE/ENV",
         "TYPE",
         "RESULT",
-        "TICKET",
-        "NOTIFY",
+        "OPSGENIE",
+        "PAGE",
         "WHY",
     ]
-    assert lines[1].split()[:6] == [
+    assert lines[1].split()[:7] == [
         "P2",
         "a-1001",
         "checkout-api/prod",
         "HighErrorRate",
         "triaged",
-        "T-0001",
+        "OG-0001",
+        "yes",
     ]
     assert any(line.startswith("--   08-malformed.json") and "(+2 more)" in line for line in lines)
     assert not any("checklist" in line for line in lines[:13])
@@ -106,7 +108,7 @@ def test_html_report_is_written_and_escaped(tmp_path, capsys):
 def test_clean_batch_exits_zero(tmp_path, capsys):
     assert run(tmp_path, EXAMPLES / "alerts" / "01-error-rate.json", extra=["--details"]) == EXIT_OK
     out = capsys.readouterr().out
-    assert "[P2] a-1001  HighErrorRate  checkout-api/prod  -> triaged  T-0001" in out
+    assert "[P2] a-1001  HighErrorRate  checkout-api/prod  -> triaged  OG-0001" in out
     assert "what: 7% of checkout requests" in out
     assert "Needs human review: 0." in out
 

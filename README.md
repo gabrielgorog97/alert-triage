@@ -1,8 +1,8 @@
 # alert-triage
 
 A small CLI that reads synthetic alerts and a service catalog, then produces a triage result and a
-first-response checklist for the on-call engineer. Take-home exercise, Option 2 (Alert Triage and
-Runbook Assistant).
+first-response checklist for the on-call engineer. Its output is an alert in Opsgenie (simulated in
+a local file). Take-home exercise, Option 2 (Alert Triage and Runbook Assistant).
 
 - [Problem interpretation](#problem-interpretation)
 - [Quick start](#quick-start)
@@ -24,8 +24,8 @@ without making things worse. This tool adds that context from a service catalog,
 are written down and testable, and it:
 
 - never guesses: anything the rules cannot decide goes to a person (manual review);
-- never creates unbounded work: repeats of the same problem update one open item;
-- never touches production: its only actions are simulated tickets and pages in a local file;
+- never creates unbounded work: repeats of the same problem update one open Opsgenie alert;
+- never touches production: its only actions are simulated Opsgenie calls in a local file;
 - is safe to re-run on the same input.
 
 ## Quick start
@@ -62,7 +62,7 @@ alert-triage run INPUTS... --catalog services.yaml [--state state/state.json] \
 - `INPUTS` are alert JSON files or directories (all `*.json`, in name order). A file may hold one
   alert or a list of alerts.
 - `--state` keeps memory between runs (open items, processed ids). Default `state/state.json`.
-- `--outbox` is where simulated tickets, pages and rejected payloads are written
+- `--outbox` is where the simulated Opsgenie calls and rejected payloads are written
   (`events.jsonl`). Default `outbox/`.
 - `--checklists` replaces the built-in checklist templates with your own file.
 - Default output is one line per alert. `--details` adds impact, escalation and the checklist
@@ -95,41 +95,41 @@ docker run --rm -v "$PWD/examples:/work/examples:ro" alert-triage:local \
 
 | File | Alert | Result | Rule that produced it |
 |---|---|---|---|
-| `01-error-rate` | HighErrorRate, checkout-api prod, 0.07 vs 0.05 | **P2**, ticket T-0001 + page to EOC on-call (ack within 15 min) | prod and customer-facing; 1.4x threshold is below the 2x line for P1 |
-| `02-latency` | HighLatency, search-api prod, 1.8s vs 0.5s | **P2**, page + ticket T-0002 | prod and customer-facing; latency alone is never P1 (slow is not down) |
-| `03-dependency-down` | DependencyDown, checkout-api prod | **P1**, ticket T-0003 + page to EOC on-call (ack within 5 min), open incident | prod, customer-facing, outage-type alert |
+| `01-error-rate` | HighErrorRate, checkout-api prod, 0.07 vs 0.05 | **P2**, Opsgenie alert OG-0001, pages EOC on-call (ack within 15 min) | prod and customer-facing; 1.4x threshold is below the 2x line for P1 |
+| `02-latency` | HighLatency, search-api prod, 1.8s vs 0.5s | **P2**, OG-0002, pages EOC on-call | prod and customer-facing; latency alone is never P1 (slow is not down) |
+| `03-dependency-down` | DependencyDown, checkout-api prod | **P1**, OG-0003, pages EOC on-call (ack within 5 min), open an incident | prod, customer-facing, outage-type alert |
 | `04-repeats` (3 alerts) | `a-1001` again | **ignored** | same `alert_id` already processed: a redelivery |
-| | `a-1002`, 0.08 | **duplicate** of T-0001, no new work | same name + service + environment still open |
-| | `a-1003`, 0.15 | **duplicate**, priority raised P2 to P1, new page | 3x threshold is P1; a worse repeat must not stay hidden |
-| `05-internal` | ServiceDown, report-builder prod | **P3**, ticket only | prod but internal; no customer impact expected |
-| `06-staging` | ServiceDown, search-api staging | **P4**, ticket only | non-prod, even for an outage |
-| `07-unknown-service` | HighErrorRate, loyalty-points prod | **manual_review**, ticket to `eoc-triage` | service not in the catalog: no owner, no runbook, so no guessing |
-| `08-malformed` | missing service, bad time, text value | **rejected**, ticket T-0007 to `eoc-triage` + dead letter | validation: all three errors reported at once; it may still be a real alert, so a person checks it |
-| `09-not-json` | truncated file | **rejected**, ticket T-0008 to `eoc-triage` + dead letter | file cannot be parsed; the raw text goes in the ticket and the rest of the batch continues |
-| `10-resolved` | resolved, checkout-api prod | **resolved**, T-0001 closed | closes the open item with the same fingerprint |
-| `11-back-again` | HighErrorRate, checkout-api prod, 0.09 | **reopened** T-0001, page | the same problem came back within 30 minutes of closing: same ticket, not a new one |
+| | `a-1002`, 0.08 | **duplicate** of OG-0001, no new work | same name + service + environment still open |
+| | `a-1003`, 0.15 | **duplicate**, OG-0001 raised from P2 to P1, pages again | 3x threshold is P1; a worse repeat must not stay hidden |
+| `05-internal` | ServiceDown, report-builder prod | **P3**, OG-0004 to the owner, no page | prod but internal; no customer impact expected |
+| `06-staging` | ServiceDown, search-api staging | **P4**, OG-0005 to the owner, no page | non-prod, even for an outage |
+| `07-unknown-service` | HighErrorRate, loyalty-points prod | **manual_review**, OG-0006 to `eoc-triage` | service not in the catalog: no owner, no runbook, so no guessing |
+| `08-malformed` | missing service, bad time, text value | **rejected**, OG-0007 to `eoc-triage` + dead letter | validation: all three errors reported at once; it may still be a real alert, so a person checks it |
+| `09-not-json` | truncated file | **rejected**, OG-0008 to `eoc-triage` + dead letter | file cannot be parsed; the raw text goes in the Opsgenie alert and the rest of the batch continues |
+| `10-resolved` | resolved, checkout-api prod | **resolved**, OG-0001 closed | closes the open alert with the same fingerprint |
+| `11-back-again` | HighErrorRate, checkout-api prod, 0.09 | **reopened**: OG-0009, linked to OG-0001, pages | the same problem came back within 30 minutes of closing; Opsgenie cannot reopen a closed alert, so the new one points to the old one |
 
 Exit code is 4, because three alerts need a person. Running `make demo`'s command a second time
-on the same state produces no new tickets or pages: every alert is a redelivery, and the two
-broken files are recognised by their content and point to their existing tickets.
+on the same state creates no new Opsgenie alerts or pages: every alert is a redelivery, and the
+two broken files are recognised by their content and point to their existing Opsgenie alerts.
 
 Default output, one line per alert:
 
 ```text
-PRI  ALERT              SERVICE/ENV          TYPE            RESULT         TICKET  NOTIFY       WHY
-P2   a-1001             checkout-api/prod    HighErrorRate   triaged        T-0001  page,ticket  prod, customer-facing, HighErrorRate above threshold
-P2   a-2001             search-api/prod      HighLatency     triaged        T-0002  page,ticket  prod, customer-facing, HighLatency above threshold
-P1   a-3001             checkout-api/prod    DependencyDown  triaged        T-0003  page,ticket  prod, customer-facing, DependencyDown
---   a-1001             checkout-api/prod    HighErrorRate   ignored                             alert_id already processed (redelivery)
-P2   a-1002             checkout-api/prod    HighErrorRate   duplicate      T-0001               already open as T-0001, seen 2 times
-P1   a-1003             checkout-api/prod    HighErrorRate   duplicate      T-0001               already open as T-0001, seen 3 times; priority raised P2 -> P1
-P3   a-5001             report-builder/prod  ServiceDown     triaged        T-0004  ticket       prod, internal service (not customer-facing)
-P4   a-6001             search-api/staging   ServiceDown     triaged        T-0005  ticket       non-prod environment 'staging'
---   a-7001             loyalty-points/prod  HighErrorRate   manual_review  T-0006  ticket       service 'loyalty-points' is not in the catalog
---   08-malformed.json                                       rejected       T-0007  ticket       'service' is required and must be a non-empty string (+2 more)
---   09-not-json.json                                        rejected       T-0008  ticket       alert file is not valid JSON: Expecting ',' delimiter: line 2 column 1 (char 70)
---   a-1004             checkout-api/prod    HighErrorRate   resolved       T-0001               closed T-0001 after 3 alerts
-P2   a-1005             checkout-api/prod    HighErrorRate   reopened       T-0001  page,ticket  prod, customer-facing, HighErrorRate above threshold; reopened T-0001: came back within 30 min of closing (reopen 1)
+PRI  ALERT              SERVICE/ENV          TYPE            RESULT         OPSGENIE  PAGE  WHY
+P2   a-1001             checkout-api/prod    HighErrorRate   triaged        OG-0001   yes   prod, customer-facing, HighErrorRate above threshold
+P2   a-2001             search-api/prod      HighLatency     triaged        OG-0002   yes   prod, customer-facing, HighLatency above threshold
+P1   a-3001             checkout-api/prod    DependencyDown  triaged        OG-0003   yes   prod, customer-facing, DependencyDown
+--   a-1001             checkout-api/prod    HighErrorRate   ignored                        alert_id already processed (redelivery)
+P2   a-1002             checkout-api/prod    HighErrorRate   duplicate      OG-0001         already open as OG-0001, seen 2 times
+P1   a-1003             checkout-api/prod    HighErrorRate   duplicate      OG-0001   yes   already open as OG-0001, seen 3 times; priority raised P2 -> P1
+P3   a-5001             report-builder/prod  ServiceDown     triaged        OG-0004         prod, internal service (not customer-facing)
+P4   a-6001             search-api/staging   ServiceDown     triaged        OG-0005         non-prod environment 'staging'
+--   a-7001             loyalty-points/prod  HighErrorRate   manual_review  OG-0006         service 'loyalty-points' is not in the catalog
+--   08-malformed.json                                       rejected       OG-0007         'service' is required and must be a non-empty string (+2 more)
+--   09-not-json.json                                        rejected       OG-0008         alert file is not valid JSON: Expecting ',' delimiter: line 2 column 1 (char 70)
+--   a-1004             checkout-api/prod    HighErrorRate   resolved       OG-0001         closed OG-0001 after 3 alerts
+P2   a-1005             checkout-api/prod    HighErrorRate   reopened       OG-0009   yes   prod, customer-facing, HighErrorRate above threshold; back within 30 min of closing OG-0001, linked to it (reopen 1)
 
 Summary: 13 alerts: 2 duplicate, 1 ignored, 1 manual_review, 2 rejected, 1 reopened, 1 resolved, 5 triaged. Needs human review: 3.
 ```
@@ -138,21 +138,21 @@ With `--details`, each triaged or manual-review alert also shows impact, escalat
 checklist:
 
 ```text
-[P2] a-1001  HighErrorRate  checkout-api/prod  -> triaged  T-0001  owner=payments-team  notify=page,ticket
+[P2] a-1001  HighErrorRate  checkout-api/prod  -> triaged  OG-0001  owner=payments-team  page=yes
      what: 7% of checkout requests return 5xx over the last 5 minutes
      impact: Customers likely affected: checkout-api is customer-facing in prod (HighErrorRate: some requests fail).
-     why: prod, customer-facing, HighErrorRate above threshold; opened T-0001
-     page: eoc-oncall; not acknowledged in 15 min -> escalates automatically to payments-oncall-lead
+     why: prod, customer-facing, HighErrorRate above threshold; opened OG-0001
+     page: eoc-oncall; not acknowledged in 15 min -> Opsgenie escalates to payments-oncall-lead
      escalate when the runbook says so: payments-oncall-lead
      checklist:
        1. Read the alert: priority P2, what happened, service checkout-api, environment prod.
        2. Open the runbook before doing anything else: https://runbooks.example.com/checkout-api
-       3. Acknowledge ticket T-0001 so others know it is being handled.
-       4. Acknowledge the page within 15 minutes. If nobody acknowledges it, it escalates automatically to payments-oncall-lead.
+       3. Acknowledge Opsgenie alert OG-0001 so others know it is being handled.
+       4. If nobody acknowledges the alert within 15 minutes, Opsgenie escalates it automatically to payments-oncall-lead.
        5. Check customer impact: is checkout-api in prod failing for users right now?
        6. Save the relevant Grafana dashboard panels (traffic, errors, latency) for the time around 2026-10-21T08:00:00+00:00.
        7. Check the Kubernetes state of checkout-api: pod status, restarts, recent events.
-       8. Collect logs from checkout-api for the time around 2026-10-21T08:00:00+00:00; put a sample in the ticket.
+       8. Collect logs from checkout-api for the time around 2026-10-21T08:00:00+00:00; add a sample as a note on the Opsgenie alert.
        9. Test checkout-api yourself as a customer would (call the affected endpoint) and record the result.
        10. Check code, deploy and config changes to checkout-api in the hours before 2026-10-21T08:00:00+00:00.
        11. Check whether planned maintenance or a change window covers checkout-api or its dependencies.
@@ -161,27 +161,27 @@ checklist:
        14. Only do steps the runbook gives to the on-call / EOC role. If a step belongs to another team (for example engineers restart the service), escalate to them instead of doing it yourself.
        15. If a change lines up with the start time, follow the runbook's rollback procedure.
        16. If the runbook says to escalate, or you cannot mitigate it, escalate to payments-oncall-lead. Include what you checked, the evidence collected, and what you already tried.
-       17. Before closing ticket T-0001, write down what was checked, what happened, and how it was resolved. Do not close it without this.
+       17. Before closing Opsgenie alert OG-0001, add a note with what was checked, what happened, and how it was resolved. Do not close it without this.
 
-[--] a-7001  HighErrorRate  loyalty-points/prod  -> manual_review  T-0006  owner=eoc-triage  notify=ticket
+[--] a-7001  HighErrorRate  loyalty-points/prod  -> manual_review  OG-0006  owner=eoc-triage  page=no
      what: errors on a service nobody added to the catalog
      impact: Unknown: the rules cannot decide (see why); assess impact by hand.
-     why: service 'loyalty-points' is not in the catalog; opened T-0006
+     why: service 'loyalty-points' is not in the catalog; opened OG-0006
      checklist:
        1. Do not change anything yet. Confirm the alert is real by checking the monitor that sent it.
        2. Find the owner of 'loyalty-points': search the service inventory, ask in the EOC channel.
-       3. Decide the priority by hand and write the reason in ticket T-0006.
+       3. Decide the priority by hand, set it on Opsgenie alert OG-0006, and add a note with the reason.
        4. When handing over, include what you checked and why the alert was unclear.
        5. Remove the ambiguity for next time: add the service, environment or alert type to the catalog or fix the alert definition.
 ```
 
 `--json` prints the same results as objects (`priority`, `impact`, `owner`, `escalation`,
-`page_to`, `ack_timeout_minutes`, `notify`, `reasons`, `checklist`, `ticket_id`, ...) plus a `summary`
-with counts. Each line in `outbox/events.jsonl` is one simulated action with its idempotency key,
-for example:
+`page`, `page_to`, `ack_timeout_minutes`, `reasons`, `checklist`, `opsgenie_id`, ...) plus a
+`summary` with counts. Each line in `outbox/events.jsonl` is one simulated Opsgenie call with its
+idempotency key, for example:
 
 ```json
-{"action": "page", "idempotency_key": "page:a-1001", "ticket_id": "T-0001", "priority": "P2", "owner": "payments-team", "impact": "Customers likely affected: ...", "checklist": ["..."]}
+{"action": "create_alert", "idempotency_key": "create_alert:HighErrorRate|checkout-api|prod:OG-0001", "opsgenie_id": "OG-0001", "alias": "HighErrorRate|checkout-api|prod", "responders": ["eoc-oncall"], "page": true, "priority": "P2", "owner": "payments-team", "escalation": "payments-oncall-lead", "ack_timeout_minutes": 15, "impact": "Customers likely affected: ...", "checklist": ["..."]}
 ```
 
 ## Design
@@ -223,17 +223,17 @@ Every alert ends in exactly one of these:
 
 | Outcome | Meaning | Work created |
 |---|---|---|
-| `triaged` | priority, owner and checklist decided | ticket, plus a page for P1/P2 |
-| `duplicate` | same alert already open | none, the open item's counter goes up (or a page if priority rises) |
-| `manual_review` | readable, but the rules cannot decide | ticket to the EOC triage queue |
-| `rejected` | cannot be read or validated | ticket to the EOC triage queue with the raw payload, plus the dead letter |
-| `resolved` | monitoring reports recovery; closes the open item | ticket closed |
-| `reopened` | same problem back within 30 minutes of closing | the same ticket reopened, page again for P1/P2 |
+| `triaged` | priority, owner and checklist decided | Opsgenie alert; it pages for P1/P2 |
+| `duplicate` | same alert already open | none, the open alert's counter goes up (or its priority is raised and it pages) |
+| `manual_review` | readable, but the rules cannot decide | Opsgenie alert to `eoc-triage`, no page |
+| `rejected` | cannot be read or validated | Opsgenie alert to `eoc-triage` with the raw payload, plus the dead letter |
+| `resolved` | monitoring reports recovery | the open Opsgenie alert is closed |
+| `reopened` | same problem back within 30 minutes of closing | new Opsgenie alert linked to the closed one; pages again for P1/P2 |
 | `ignored` | redelivered `alert_id`, or resolved with nothing open | none |
 
 `manual_review` and `rejected` are different on purpose: "I don't know what this means" is a
-decision for a person, "I can't parse this" is broken data. Neither is dropped: both open a
-ticket for a person, because a broken alert can still be a real outage.
+decision for a person, "I can't parse this" is broken data. Neither is dropped: both open an
+Opsgenie alert for a person, because a broken alert can still be a real outage.
 
 ### Triage rules
 
@@ -242,18 +242,21 @@ Evaluated in this order; the first rule that applies wins. Code: `src/alert_tria
 
 1. **Validation.** `alert_id`, `name`, `service`, `environment`, `status` (`firing` or `resolved`)
    and `started_at` (ISO 8601) are required and must have the right types. Otherwise: `rejected`,
-   with a ticket to `eoc-triage` holding the raw payload. The same broken payload arriving again is
-   recognised by a hash of its content and points to the existing ticket.
+   with an Opsgenie alert to `eoc-triage` holding the raw payload. The same broken payload arriving
+   again is recognised by a hash of its content and points to the existing Opsgenie alert.
 2. **Redelivery.** An `alert_id` that was already processed is ignored, so a retried delivery
    changes nothing.
-3. **Resolved.** `status: resolved` closes the open item with the same fingerprint, if any.
-4. **Duplicate.** Fingerprint = `name + service + environment`. If an item with that fingerprint is
-   open, it is a `duplicate` until a `resolved` alert closes it. A duplicate never opens a new
-   ticket, but if it would get a higher priority than the open item (for example errors grew from
-   1.5x to 3x threshold), the item's priority is raised and the new priority pages if it should.
-5. **Reopen.** If the same fingerprint was closed less than 30 minutes ago, the closed ticket is
-   reopened instead of creating a new one (outcome `reopened`). After the third reopen the ticket is
-   flagged as flapping: the alert keeps recovering and failing, and its owner should tune it.
+3. **Resolved.** `status: resolved` closes the open Opsgenie alert with the same fingerprint, if any.
+4. **Duplicate.** Fingerprint = `name + service + environment`, used as the Opsgenie `alias`. If an
+   alert with that fingerprint is open, it is a `duplicate` until a `resolved` alert closes it. A
+   duplicate never opens a new Opsgenie alert, but if it would get a higher priority than the open
+   one (for example errors grew from 1.5x to 3x threshold), the open alert's priority is raised
+   and the new priority pages if it should.
+5. **Reopen.** If the same fingerprint was closed less than 30 minutes ago, the new Opsgenie alert
+   is linked to the closed one (`previous_alert`, outcome `reopened`). Opsgenie cannot reopen a
+   closed alert, so the link is what keeps the history together. On the third return the alert is
+   tagged `flapping`: it keeps recovering and failing, and its owner should tune it. Only one
+   Opsgenie alert per fingerprint is ever open.
 6. **Manual review** when any of these is true:
    - the service is not in the catalog
    - the environment is not one the catalog lists for that service
@@ -264,16 +267,18 @@ Evaluated in this order; the first rule that applies wins. Code: `src/alert_tria
 
 | Priority | When | Notify | Automatic escalation |
 |---|---|---|---|
-| P1 | prod, customer-facing, and `ServiceDown`, `DependencyDown`, or error rate at least 2x threshold | ticket + page to EOC on-call, open an incident | only if the page is not acknowledged in 5 min |
-| P2 | prod, customer-facing, any other known alert | ticket + page to EOC on-call | only if the page is not acknowledged in 15 min |
-| P3 | prod, internal service (not customer-facing) | ticket | none |
-| P4 | any non-prod environment (staging) | ticket | none |
+| P1 | prod, customer-facing, and `ServiceDown`, `DependencyDown`, or error rate at least 2x threshold | Opsgenie alert to EOC on-call, pages; open an incident | only if not acknowledged in 5 min |
+| P2 | prod, customer-facing, any other known alert | Opsgenie alert to EOC on-call, pages | only if not acknowledged in 15 min |
+| P3 | prod, internal service (not customer-facing) | Opsgenie alert to the owning team, no page | none |
+| P4 | any non-prod environment (staging) | Opsgenie alert to the owning team, no page | none |
 
-**Escalation.** The page goes to the EOC on-call engineer, who investigates. Escalating to the
-service team (`escalation` in the catalog) is that engineer's decision, when the runbook says so
-or the problem cannot be mitigated; there is no timer on it. The only automatic escalation is for
-a missed page: if nobody acknowledges it in time, it goes to the service's escalation contact.
-In production that timer belongs to the paging tool's escalation policy, not to this program.
+Opsgenie also uses P1 to P5, so the priority is passed through unchanged.
+
+**Escalation.** A P1/P2 alert goes to the EOC on-call engineer, who investigates. Escalating to
+the service team (`escalation` in the catalog) is that engineer's decision, when the runbook says
+so or the problem cannot be mitigated; there is no timer on it. The only automatic escalation is
+for a missed alert: if nobody acknowledges it in time, Opsgenie's escalation policy notifies the
+service's escalation contact. That timer lives in Opsgenie, not in this program.
 
 Known alert types: `HighErrorRate`, `HighLatency`, `DependencyDown`, `ServiceDown`.
 
@@ -287,7 +292,7 @@ Templates live in `src/alert_triage/data/checklists.yaml`, not in code, so the p
 shift can change the wording without a code change (or pass their own file with `--checklists`).
 The order is deliberate:
 
-1. Read the alert and open the runbook before anything else.
+1. Read the alert, open the runbook and acknowledge the Opsgenie alert before anything else.
 2. Check impact (customers in prod; "who is blocked" in non-prod).
 3. Collect evidence for every alert type: dashboards, Kubernetes state, logs, test as a customer,
    changes in the hours before the alert started, planned maintenance. Then the evidence specific
@@ -295,9 +300,10 @@ The order is deliberate:
 4. Guardrail: only steps the runbook gives to the on-call role; other teams' steps are escalated.
 5. Mitigation from the runbook.
 6. Escalation when the runbook says so or it cannot be mitigated, with the evidence already
-   collected; P1 also opens an incident. Paged alerts also say how long the page has before it
-   escalates automatically.
-7. Do not close the ticket without writing what was checked, what happened and how it was fixed.
+   collected; P1 also opens an incident. Paged alerts also say how long they have before Opsgenie
+   escalates them automatically.
+7. Do not close the Opsgenie alert without a note on what was checked, what happened and how it
+   was fixed.
 
 A template file that is missing a section or an alert type stops the run (exit 3), instead of
 producing an incomplete checklist.
@@ -306,15 +312,19 @@ producing an incomplete checklist.
 
 - `state/state.json` remembers processed alert ids and open items between runs. It is written to a
   temporary file and renamed, so a crash mid-write keeps the previous state. An unreadable state
-  file stops the run, because starting empty would reopen every known problem as a new ticket.
-- Tickets, pages and rejected payloads go through a `Notifier` interface (`outbox.py`).
-  `FileOutbox` appends them to `outbox/events.jsonl`; tests use `MemoryOutbox`. A real paging or
-  ticketing adapter would implement the same single method.
-- Every notification has an idempotency key: `create_ticket:<fingerprint>:<ticket>`,
-  `page:<alert_id>`, `resolve_ticket:<ticket>:<reopen count>`, `reopen_ticket:<ticket>:<reopen count>`,
-  and for rejected payloads, which may have no usable id, `dead_letter:<hash>` and
-  `create_ticket:rejected:<hash>` (hash of the payload content). Notifications are sent before state is saved, so a crash in
-  between can repeat a notification with the same key, but never lose a page.
+  file stops the run, because starting empty would open a new Opsgenie alert for every known
+  problem.
+- Opsgenie calls and rejected payloads go through a `Notifier` interface (`outbox.py`).
+  `FileOutbox` appends them to `outbox/events.jsonl`; tests use `MemoryOutbox`. A real Opsgenie
+  client would implement the same single method.
+- The simulated calls are `create_alert`, `update_priority`, `close_alert` and `dead_letter`.
+  There is no separate "page" call: in Opsgenie, creating a P1/P2 alert for the EOC team is what
+  notifies the on-call engineer (`page: true` in the payload).
+- Every call has an idempotency key: `create_alert:<fingerprint>:<opsgenie id>`,
+  `update_priority:<alert_id>`, `close_alert:<opsgenie id>`, and for rejected payloads, which may
+  have no usable id, `dead_letter:<hash>` and `create_alert:rejected:<hash>` (hash of the payload
+  content). Calls are made before state is saved, so a crash in between can repeat a call with
+  the same key, but never lose a page.
 
 ### Code layout
 
@@ -342,18 +352,18 @@ make test
 |---|---|---|
 | Normal alerts | `test_rules.py`, `test_engine.py` | every priority, owner, escalation, impact statement |
 | Boundaries | `test_rules.py` | exactly 2x threshold is P1, just below stays P2, threshold 0 |
-| Malformed | `test_validation.py`, `test_engine.py`, `test_cli.py` | missing fields, wrong types, booleans as numbers, bad time, not JSON, not an object; each gets one triage ticket, also across runs |
+| Malformed | `test_validation.py`, `test_engine.py`, `test_cli.py` | missing fields, wrong types, booleans as numbers, bad time, not JSON, not an object; each gets one Opsgenie alert for EOC triage, also across runs |
 | Duplicate | `test_engine.py`, `test_cli.py` | repeats, redelivery, priority raise, re-running the whole batch |
-| Flapping | `test_engine.py` | reopen within 30 min, new ticket after, flapping flag on the 3rd reopen, survives restart |
-| Ambiguous | `test_rules.py`, `test_engine.py` | unknown service, environment, alert type, missing numbers; repeated ambiguous alert gives one ticket |
+| Flapping | `test_engine.py` | back within 30 min is linked to the closed alert, unlinked after, `flapping` tag on the 3rd return, survives restart |
+| Ambiguous | `test_rules.py`, `test_engine.py` | unknown service, environment, alert type, missing numbers; repeated ambiguous alert gives one Opsgenie alert |
 | Failure paths | `test_catalog.py`, `test_checklist.py`, `test_engine.py`, `test_cli.py` | broken catalog, broken templates, corrupt state, missing input, exit codes |
 | Checklists | `test_checklist.py` | evidence before mitigation, placeholders filled, non-prod impact question |
 | Output | `test_cli.py` | one-line table, HTML report written and HTML-escaped |
 
 ## Connecting to real systems
 
-How this design would be connected to monitoring, paging, ticketing and chat, while staying
-idempotent, auditable and safe to retry. None of this is implemented.
+How this design would be connected to monitoring, Opsgenie (paging and incidents) and chat, while
+staying idempotent, auditable and safe to retry. None of this is implemented.
 
 **Monitoring in.** A small HTTP receiver (for example for Prometheus Alertmanager webhooks)
 converts each alert into the input format and calls `TriageEngine.process`. Alertmanager has no
@@ -365,27 +375,33 @@ fails, the sender retries and the redelivery rule makes the retry harmless.
 open fingerprint, and each alert is handled in one transaction. That gives correct behaviour when
 several receivers run in parallel, which the file cannot.
 
-**Notifications out (outbox pattern).** Instead of calling PagerDuty or Jira inside the alert
-transaction, the engine writes the intended action with its idempotency key into an outbox table
+**Calls to Opsgenie (outbox pattern).** Instead of calling Opsgenie inside the alert
+transaction, the engine writes the intended call with its idempotency key into an outbox table
 in the same transaction. A separate worker delivers them with retries and backoff, and moves
-actions that keep failing to a dead-letter queue that someone is alerted on. An outage of the
-ticketing system then delays tickets but does not lose them or block triage.
+calls that keep failing to a dead-letter queue that someone is alerted on. An Opsgenie outage
+then delays alerts but does not lose them or block triage.
 
-- **Paging:** PagerDuty's Events API accepts a `dedup_key`; the idempotency key (or the
-  fingerprint) is passed there, so a repeated send does not page twice.
-- **Ticketing:** Jira has no built-in idempotency key, so the adapter stores key-to-ticket mappings
-  and checks them (or searches for a label with the key) before creating.
+- **Deduplication:** the Opsgenie Alert API deduplicates on `alias` while an alert with that alias
+  is open. Sending the fingerprint as `alias` means a repeated create does not open a second alert
+  or page twice; Opsgenie only increases the alert's count.
+- **Close and update:** close and priority calls address the alert by its alias, so the worker
+  does not need to know Opsgenie's own alert id.
+- **Routing and escalation:** responders, notification rules and the ack-timeout escalation live
+  in Opsgenie team settings and escalation policies; this tool only sends the priority and the
+  team.
+- **Incidents:** the P1 step "open an incident" maps to an Opsgenie incident, opened by the
+  engineer, not automatically.
 - **Chat:** a message per P1/P2 to the owning team's channel, with the message id stored so updates
   edit the same message. A repeated chat message is the least harmful failure, so it is accepted.
 
-**Audit.** Every decision is already a record: input payload, outcome, reasons, rule inputs, ticket
-id, timestamps. In production that log is append-only, kept for the incident review, and each
+**Audit.** Every decision is already a record: input payload, outcome, reasons, rule inputs,
+Opsgenie alert id, timestamps. In production that log is append-only, kept for the incident review, and each
 record also stores the version of the rules, catalog and checklists (git commit) that produced it,
 so "why did this page at 3 a.m.?" has an exact answer.
 
 **Safe to operate.**
 
-- The tool only creates tickets and pages; it never runs remediation. Changes stay with people and
+- The tool only creates, updates and closes Opsgenie alerts; it never runs remediation. Changes stay with people and
   their runbooks.
 - Catalog, rules and checklists live in git and change through review, like code.
 - It fails closed: a broken catalog or state stops processing and is reported, instead of silently
@@ -397,33 +413,38 @@ so "why did this page at 3 a.m.?" has an exact answer.
 
 ## Assumptions
 
-- Manual-review items go to a single EOC triage queue (`eoc-triage`), since the owner may be
-  unknown.
+- Opsgenie is the alerting and paging tool. The exercise asks for "notifications or ticket
+  creation", so there is no separate ticketing system: the Opsgenie alert is the unit of work.
+- P1/P2 alerts go to the EOC on-call (`eoc-oncall`); P3/P4 go to the owning team without a page.
+- Manual-review and rejected items go to a single EOC triage team (`eoc-triage`), since the owner
+  may be unknown.
 - A threshold alert without numbers is incomplete data (manual review), not malformed input,
   because the rest of the alert is usable.
 - Only `prod` is production; every other environment listed in the catalog is non-prod.
 - An alert's `name` is its type; the same type on the same service and environment is the same
   problem until it resolves.
-- Ticket ids (`T-0001`) are local and only stand in for real ticket numbers.
+- Opsgenie ids (`OG-0001`) are local and only stand in for real Opsgenie alert ids.
 
 ## Known limitations
 
 - **Single process.** The state file has no locking; two runs at the same time can overwrite each
   other. Fine for a CLI, not for a service.
 - **Lost or out-of-order resolve.** An item stays open until a `resolved` alert arrives. If it is
-  lost, the item never closes and new alerts for it only count as duplicates. A `resolved` that
+  lost, the Opsgenie alert never closes and new alerts for it only count as duplicates. A `resolved` that
   arrives before its `firing` alert is ignored, and the later `firing` opens an item that stays
   open. Needs a maximum age or a reconcile job against the monitoring system.
 - **No acknowledgement timer here.** The ack timeout and the escalation contact are sent with the
-  page, but this program does not wait for an acknowledgement; in production the paging tool's
-  escalation policy does.
+  alert, but this program does not wait for an acknowledgement; Opsgenie's escalation policy does.
+- **Re-notifying on a priority raise is not verified.** When a duplicate raises an open alert to
+  P1, the payload asks for a page. Whether Opsgenie notifies again on a priority change depends on
+  its notification rules; a real client must make sure it does.
 - **Priority only goes up.** A lower repeat does not lower the priority; a person decides that.
 - **Unbounded memory.** The processed-id list grows forever; it needs a retention period.
-- **Recovery closes the ticket automatically.** When monitoring sends `resolved`, the ticket is
-  closed without a human note. This is a deliberate choice (it matches how alerting tools
+- **Recovery closes the Opsgenie alert automatically.** When monitoring sends `resolved`, the
+  alert is closed without a human note. This is a deliberate choice (it matches how alerting tools
   auto-resolve), but it is in tension with the checklist rule "do not close without writing what
   happened": the note has to be added after the fact.
-- **Flapping still pages.** A reopened P1/P2 pages again each time, even once flagged as flapping.
+- **Flapping still pages.** A returning P1/P2 pages again each time, even once tagged flapping.
   Safer than going quiet on a real outage, but noisy until the alert is tuned.
 - **Reopen window uses processing time**, not the alert's own timestamps, so replaying old files
   in a batch treats them as happening now.
@@ -443,7 +464,7 @@ With another day I would:
 2. Add the Alertmanager webhook receiver and an outbox worker with retries, keeping the CLI for
    batch and testing.
 3. Add a maximum age for open items and a reconcile step against the monitoring system.
-4. Map priorities to escalation policies in the paging tool (who is primary, ack timeouts), so
-   the policy lives in one place.
+4. Define the Opsgenie escalation policies (who is primary, ack timeouts) as code, so the policy
+   lives in one reviewed place.
 5. Record the rules/catalog version with every decision.
 6. Have the checklist wording reviewed by the teams who own the runbooks.

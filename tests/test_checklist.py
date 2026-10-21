@@ -12,7 +12,7 @@ def templates():
 
 def checklist_for(templates, catalog, alert_data, **changes):
     alert = parse_alert({**alert_data, **changes})
-    return build_checklist(templates, classify(alert, catalog), alert, "T-0042")
+    return build_checklist(templates, classify(alert, catalog), alert, "OG-0042")
 
 
 def test_evidence_comes_before_mitigation(templates, catalog, alert_data):
@@ -35,16 +35,16 @@ def test_placeholders_are_filled(templates, catalog, alert_data):
 def test_p1_has_escalation_and_incident_steps(templates, catalog, alert_data):
     steps = checklist_for(templates, catalog, alert_data, name="ServiceDown")
     assert steps[3] == (
-        "Acknowledge the page within 5 minutes. If nobody acknowledges it, it escalates "
+        "If nobody acknowledges the alert within 5 minutes, Opsgenie escalates it "
         "automatically to payments-oncall-lead."
     )
-    assert any(s.startswith("Open an incident") for s in steps)
-    assert steps[-1].startswith("Before closing ticket T-0042")
+    assert any(s.startswith("Open an Opsgenie incident") for s in steps)
+    assert steps[-1].startswith("Before closing Opsgenie alert OG-0042")
 
 
 def test_p3_has_no_page_but_can_still_be_escalated(templates, catalog, alert_data):
     steps = checklist_for(templates, catalog, alert_data, service="report-builder")
-    assert not any(s.startswith("Acknowledge the page") for s in steps)
+    assert not any(s.startswith("If nobody acknowledges") for s in steps)
     assert any(s.startswith("If the runbook says to escalate") for s in steps)
 
 

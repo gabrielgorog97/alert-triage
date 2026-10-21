@@ -19,11 +19,11 @@ class StateStore:
         self.path = Path(path)
         self.processed: set[str] = set()
         self.open: dict[str, dict] = {}
-        # Recently closed items, so a problem that comes back soon reopens its ticket (flapping).
+        # Recently closed items, so a problem that comes back soon is linked to its last alert.
         self.recent: dict[str, dict] = {}
-        # Content hash of each unreadable payload -> the triage ticket opened for it.
+        # Content hash of each unreadable payload -> the Opsgenie alert opened for it.
         self.rejected: dict[str, str] = {}
-        self.next_ticket = 1
+        self.next_alert = 1
         self._load()
 
     def _load(self):
@@ -33,17 +33,17 @@ class StateStore:
             data = json.loads(self.path.read_text())
             self.processed = set(data["processed"])
             self.open = data["open"]
-            self.next_ticket = data["next_ticket"]
+            self.next_alert = data["next_alert"]
             self.recent = data.get("recent", {})
             self.rejected = data.get("rejected", {})
         except (OSError, ValueError, KeyError, TypeError) as exc:
-            # Starting from empty would reopen every known problem as a new ticket.
+            # Starting from empty would open a new Opsgenie alert for every known problem.
             raise StateError(f"state file {self.path} is unreadable: {exc}") from exc
 
-    def new_ticket_id(self) -> str:
-        ticket_id = f"T-{self.next_ticket:04d}"
-        self.next_ticket += 1
-        return ticket_id
+    def new_opsgenie_id(self) -> str:
+        opsgenie_id = f"OG-{self.next_alert:04d}"
+        self.next_alert += 1
+        return opsgenie_id
 
     def save(self):
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -52,7 +52,7 @@ class StateStore:
             "open": self.open,
             "recent": self.recent,
             "rejected": self.rejected,
-            "next_ticket": self.next_ticket,
+            "next_alert": self.next_alert,
         }
         fd, tmp = tempfile.mkstemp(dir=self.path.parent, prefix=".state-")
         with os.fdopen(fd, "w") as f:

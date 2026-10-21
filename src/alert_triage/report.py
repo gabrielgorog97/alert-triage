@@ -9,17 +9,17 @@ LEGEND = [
     (
         "P1",
         "Prod, customers affected, outage or errors at least 2x threshold. Pages EOC on-call; "
-        "auto-escalates if not acknowledged in 5 min.",
+        "Opsgenie escalates if not acknowledged in 5 min.",
     ),
     (
         "P2",
-        "Prod, customers affected. Pages EOC on-call; auto-escalates if not acknowledged in "
-        "15 min.",
+        "Prod, customers affected. Pages EOC on-call; Opsgenie escalates if not acknowledged "
+        "in 15 min.",
     ),
-    ("P3", "Prod, internal service. Ticket only."),
-    ("P4", "Non-prod (staging). Ticket only."),
+    ("P3", "Prod, internal service. Opsgenie alert to the owner, no page."),
+    ("P4", "Non-prod (staging). Opsgenie alert to the owner, no page."),
     ("review", "The rules cannot decide. A person looks at it; nothing is guessed."),
-    ("rejected", "Broken or incomplete data. Kept in the dead letter with the reason."),
+    ("rejected", "Broken or incomplete data. Dead letter, plus an Opsgenie alert for EOC triage."),
 ]
 
 STYLE = """
@@ -64,8 +64,8 @@ def render_html(results: list[tuple[str, TriageResult]], counts, needs_review: i
 first-response checklist.</p>
 <div class="cards">{card_html}</div>
 <table>
-<tr><th>Priority</th><th>Alert</th><th>Service / env</th><th>Result</th><th>Ticket</th>
-<th>Notify</th><th>Why</th></tr>
+<tr><th>Priority</th><th>Alert</th><th>Service / env</th><th>Result</th><th>Opsgenie</th>
+<th>Page</th><th>Why</th></tr>
 {rows}
 </table>
 <h2>How to read it</h2>
@@ -95,7 +95,7 @@ def _row(source: str, r: TriageResult) -> str:
         f'<tr class="{"quiet" if quiet else ""}">'
         f'<td><span class="tag {tag}">{escape(tag)}</span></td>'
         f"<td>{alert}</td><td>{where}</td><td>{escape(r.outcome.value)}</td>"
-        f"<td>{escape(r.ticket_id or '')}</td><td>{escape(', '.join(r.notify))}</td>"
+        f"<td>{escape(r.opsgenie_id or '')}</td><td>{'yes' if r.page else ''}</td>"
         f"<td>{_why(r)}</td></tr>"
     )
 
@@ -113,7 +113,7 @@ def _why(r: TriageResult) -> str:
     if r.ack_timeout_minutes:
         extra.append(
             f"<p><b>Page:</b> {escape(r.page_to or '')}. Not acknowledged in "
-            f"{r.ack_timeout_minutes} min: escalates automatically to "
+            f"{r.ack_timeout_minutes} min: Opsgenie escalates to "
             f"{escape(r.escalation or '')}.</p>"
         )
     if r.escalation:

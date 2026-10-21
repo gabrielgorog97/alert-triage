@@ -116,6 +116,13 @@ Kept as I worked, newest last. Each entry says what I asked, what came back, and
   acknowledges (5 min for P1, 15 min for P2), and it goes to the service's escalation contact.
 - Five existing tests failed after these changes because they checked the old behaviour; I
   rewrote them for the new rules and added tests for reopen, flapping and rejected tickets.
+- Opsgenie instead of tickets, my decision. The exercise allows "notifications or ticket
+  creation" and names no tool, so I dropped tickets and modelled everything as an Opsgenie alert,
+  the tool EOC work is centred on. This changed more than words, because of how Opsgenie works:
+  there is no separate page call (a P1/P2 alert to the EOC team is the page), the fingerprint is
+  the Opsgenie `alias` it deduplicates on, and a closed alert cannot be reopened, so a problem
+  that comes back gets a new alert linked to the closed one instead of reopening it. The tests
+  were updated to check the Opsgenie calls (`create_alert`, `update_priority`, `close_alert`).
 
 ## Accepted, changed, rejected
 
@@ -129,16 +136,17 @@ redelivered ids; manual review for threshold alerts without numbers and for thre
 less; raising priority on a worse duplicate; send-before-save with idempotency keys; content hash
 for dead-letter keys; the exit codes; the impact wording.
 
-**Found by me in review and changed:** unreadable alerts now open a ticket instead of only
-going to the dead letter; flapping alerts reopen one ticket instead of opening new ones;
-escalation is the on-call engineer's decision, automatic only for an unacknowledged page.
+**Found by me in review and changed:** unreadable alerts now open an alert for EOC triage
+instead of only going to the dead letter; a flapping alert keeps one open alert, linked to the
+previous ones, instead of new unrelated work each cycle; escalation is the on-call engineer's
+decision, automatic only for an unacknowledged alert; Opsgenie alerts instead of tickets.
 
 **Changed:** the checklist draft (order, common evidence, change window anchored to the alert
 start, guardrails); the staging rule, after the first draft assumed a 3-level scale;
 `str, Enum` to `StrEnum` after the linter flagged it.
 
 **Rejected or left out on purpose:** a validation library (pydantic), to keep every rule visible;
-any real integration (paging, ticketing, chat), as the exercise requires; automatic remediation
+any real integration (Opsgenie, chat), as the exercise requires; automatic remediation
 steps such as restarts, because the tool should guide a person, not change production; lowering
 priority on a duplicate, because a single lower reading does not prove the problem is smaller.
 
@@ -151,7 +159,7 @@ priority on a duplicate, because a single lower reading does not prove the probl
 - `ruff check` and `ruff format --check` in `make lint`; the same `make ci` target runs in the
   GitHub Actions workflow.
 - `make demo` run by hand and the output read line by line against the README rules. Running it
-  a second time on the same input creates no new tickets or pages.
+  a second time on the same input creates no new Opsgenie alerts or pages.
 - Wheel and sdist built with `make build`; Docker image built and run on the examples.
 - I read every module and can explain each rule. Where a test failed, I checked whether the code
   or the test was wrong before changing anything (three times it was the test).
@@ -165,7 +173,8 @@ Things I would not ship without more work (also listed in the README):
 - An item stays open until a `resolved` alert arrives. If that alert is lost, the item never
   closes and new alerts for it are counted as duplicates. Needs a maximum age or a reconcile job
   against the monitoring system.
-- Escalation times are written into the ticket but nothing enforces them; there is no timer.
+- The ack timeout is sent with the alert, but the timer itself is Opsgenie's escalation policy,
+  which is not part of this exercise.
 - The processed-id list grows forever; it needs a retention period.
 - The rules and checklist wording are mine and the assistant's, checked against my own shift
   experience, not reviewed by the owning teams.

@@ -118,7 +118,7 @@ def _as_json(results, counts, needs_review) -> dict:
 
 
 def _as_table(results, counts, needs_review) -> str:
-    header = ("PRI", "ALERT", "SERVICE/ENV", "TYPE", "RESULT", "TICKET", "NOTIFY", "WHY")
+    header = ("PRI", "ALERT", "SERVICE/ENV", "TYPE", "RESULT", "OPSGENIE", "PAGE", "WHY")
     rows = [header]
     for source, r in results:
         if r.outcome == Outcome.REJECTED:
@@ -131,7 +131,7 @@ def _as_table(results, counts, needs_review) -> str:
             alert, where = r.alert_id, f"{service}/{env}"
             why = "; ".join(x for x in r.reasons if not x.startswith("opened "))
         rows.append(
-            (label, alert, where, name, r.outcome.value, r.ticket_id or "", ",".join(r.notify), why)
+            (label, alert, where, name, r.outcome.value, r.opsgenie_id or "", _yes(r.page), why)
         )
 
     widths = [max(len(row[i]) for row in rows) for i in range(len(header) - 1)]
@@ -154,11 +154,11 @@ def _as_text(results, counts, needs_review) -> str:
         label = r.priority.value if r.priority else "--"
         name, service, env = (r.fingerprint or "?|?|?").split("|")
         head = f"[{label}] {r.alert_id}  {name}  {service}/{env}  -> {r.outcome.value}"
-        if r.ticket_id:
-            head += f"  {r.ticket_id}"
+        if r.opsgenie_id:
+            head += f"  {r.opsgenie_id}"
 
         if r.outcome in (Outcome.TRIAGED, Outcome.MANUAL_REVIEW):
-            lines.append(head + f"  owner={r.owner}  notify={','.join(r.notify)}")
+            lines.append(head + f"  owner={r.owner}  page={_yes(r.page) or 'no'}")
             if r.description:
                 lines.append(f"     what: {r.description}")
             lines.append(f"     impact: {r.impact}")
@@ -166,14 +166,14 @@ def _as_text(results, counts, needs_review) -> str:
             if r.ack_timeout_minutes:
                 lines.append(
                     f"     page: {r.page_to}; not acknowledged in {r.ack_timeout_minutes} min"
-                    f" -> escalates automatically to {r.escalation}"
+                    f" -> Opsgenie escalates to {r.escalation}"
                 )
             if r.escalation:
                 lines.append(f"     escalate when the runbook says so: {r.escalation}")
             lines.append("     checklist:")
             lines.extend(f"       {i}. {step}" for i, step in enumerate(r.checklist, 1))
         elif r.outcome == Outcome.REJECTED:
-            lines.append(f"[--] {source}  -> rejected  {r.ticket_id}  owner={r.owner}")
+            lines.append(f"[--] {source}  -> rejected  {r.opsgenie_id}  owner={r.owner}")
             lines.extend(f"     error: {e}" for e in r.reasons)
             lines.extend(f"       {i}. {step}" for i, step in enumerate(r.checklist, 1))
         else:
@@ -183,6 +183,10 @@ def _as_text(results, counts, needs_review) -> str:
     parts = ", ".join(f"{n} {outcome}" for outcome, n in sorted(counts.items()))
     lines.append(f"Summary: {len(results)} alerts: {parts}. Needs human review: {needs_review}.")
     return "\n".join(lines)
+
+
+def _yes(flag: bool) -> str:
+    return "yes" if flag else ""
 
 
 def main(argv=None) -> int:

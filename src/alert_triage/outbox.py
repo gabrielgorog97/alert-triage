@@ -4,8 +4,8 @@ from typing import Protocol
 
 
 class Notifier(Protocol):
-    """What the triage engine needs from paging and ticketing. A real integration (PagerDuty,
-    Opsgenie, Jira, ServiceNow) implements the same methods; the engine does not change.
+    """What the triage engine needs from the alerting tool. A real Opsgenie client implements
+    the same method; the engine does not change.
 
     Every call carries an idempotency key, so a receiver can drop a repeated delivery."""
 

@@ -34,7 +34,6 @@ def classify(alert: Alert, catalog: dict[str, Service]) -> TriageResult:
             fingerprint=alert.fingerprint,
             impact="Unknown: the rules cannot decide (see why); assess impact by hand.",
             owner=MANUAL_REVIEW_QUEUE,
-            notify=["ticket"],
             reasons=problems,
             runbook=service.runbook if service else None,
         )
@@ -50,7 +49,7 @@ def classify(alert: Alert, catalog: dict[str, Service]) -> TriageResult:
         escalation=service.escalation,
         page_to=EOC_ONCALL if priority in PAGED_PRIORITIES else None,
         ack_timeout_minutes=ACK_TIMEOUT_MINUTES.get(priority),
-        notify=["page", "ticket"] if priority in PAGED_PRIORITIES else ["ticket"],
+        page=priority in PAGED_PRIORITIES,
         reasons=[reason],
         runbook=service.runbook,
     )

@@ -13,7 +13,7 @@ def test_error_rate_above_threshold_is_p2(alert_data, catalog):
     result = triage(alert_data, catalog)
     assert result.outcome == Outcome.TRIAGED
     assert result.priority == Priority.P2
-    assert result.notify == ["page", "ticket"]
+    assert result.page is True
     assert result.page_to == "eoc-oncall"
     assert result.ack_timeout_minutes == 15
     assert result.owner == "payments-team"
@@ -42,10 +42,10 @@ def test_high_latency_is_p2_even_when_far_above_threshold(alert_data, catalog):
     assert result.priority == Priority.P2
 
 
-def test_internal_prod_service_is_p3_ticket_only(alert_data, catalog):
+def test_internal_prod_service_is_p3_without_page(alert_data, catalog):
     result = triage(alert_data, catalog, service="report-builder", name="ServiceDown")
     assert result.priority == Priority.P3
-    assert result.notify == ["ticket"]
+    assert result.page is False
     assert result.ack_timeout_minutes is None
     assert result.page_to is None
     assert result.escalation == "data-oncall-lead"
@@ -54,7 +54,7 @@ def test_internal_prod_service_is_p3_ticket_only(alert_data, catalog):
 def test_staging_is_p4_even_for_an_outage(alert_data, catalog):
     result = triage(alert_data, catalog, environment="staging", name="ServiceDown")
     assert result.priority == Priority.P4
-    assert result.notify == ["ticket"]
+    assert result.page is False
 
 
 def test_unknown_service_goes_to_manual_review(alert_data, catalog):

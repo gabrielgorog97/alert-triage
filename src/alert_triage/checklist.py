@@ -36,9 +36,9 @@ def load_checklists(path: Path | None = None) -> dict:
     return data
 
 
-def build_checklist(templates: dict, result: TriageResult, alert: Alert, ticket_id: str) -> list:
+def build_checklist(templates: dict, result: TriageResult, alert: Alert, opsgenie_id: str) -> list:
     values = {
-        "ticket_id": ticket_id,
+        "opsgenie_id": opsgenie_id,
         "priority": result.priority.value if result.priority else "unprioritized",
         "service": alert.service,
         "environment": alert.environment,
@@ -55,10 +55,9 @@ def build_checklist(templates: dict, result: TriageResult, alert: Alert, ticket_
     else:
         per_alert = templates["alerts"][alert.name]
         impact = "prod" if alert.environment in PROD_ENVIRONMENTS else "non_prod"
-        paged = result.ack_timeout_minutes is not None
         steps = [
             *templates["assess"],
-            *([templates["escalate"]["ack"]] if paged else []),
+            *([templates["escalate"]["ack"]] if result.page else []),
             templates["impact"][impact],
             *templates["evidence_common"],
             *per_alert["evidence"],
@@ -73,5 +72,5 @@ def build_checklist(templates: dict, result: TriageResult, alert: Alert, ticket_
     return [step.format(**values) for step in steps]
 
 
-def rejected_checklist(templates: dict, ticket_id: str) -> list:
-    return [step.format(ticket_id=ticket_id) for step in templates["rejected"]]
+def rejected_checklist(templates: dict, opsgenie_id: str) -> list:
+    return [step.format(opsgenie_id=opsgenie_id) for step in templates["rejected"]]
