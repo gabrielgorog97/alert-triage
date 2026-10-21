@@ -1,6 +1,7 @@
 from collections.abc import Callable
 from datetime import UTC, datetime
 
+from alert_triage.checklist import build_checklist, load_checklists
 from alert_triage.models import Outcome, Priority, Service, TriageResult
 from alert_triage.outbox import Notifier
 from alert_triage.rules import classify
@@ -25,11 +26,13 @@ class TriageEngine:
         catalog: dict[str, Service],
         state: StateStore,
         notifier: Notifier,
+        checklists: dict | None = None,
         clock: Callable[[], str] = _utcnow,
     ):
         self.catalog = catalog
         self.state = state
         self.notifier = notifier
+        self.checklists = checklists if checklists is not None else load_checklists()
         self.clock = clock
 
     def process(self, payload) -> TriageResult:
@@ -68,6 +71,7 @@ class TriageEngine:
     def _open(self, alert) -> TriageResult:
         result = classify(alert, self.catalog)
         ticket_id = self.state.new_ticket_id()
+        result.checklist = build_checklist(self.checklists, result, alert, ticket_id)
         now = self.clock()
         self.notifier.send(
             "create_ticket",
@@ -159,4 +163,5 @@ def _summary(result: TriageResult) -> dict:
         "escalate_after_minutes": result.escalate_after_minutes,
         "reasons": result.reasons,
         "runbook": result.runbook,
+        "checklist": result.checklist,
     }

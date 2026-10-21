@@ -43,6 +43,10 @@ Kept as I worked, newest last. Each entry says what I asked, what came back, and
   - Send notifications before saving state, with idempotency keys, so a crash can repeat a page but
     not lose one (at-least-once delivery, made safe by the receiver dropping repeated keys).
   - Duplicates do not send any notification; the count is kept in state.
+  I agreed with all three.
+- Checklists. Asked for checklist templates in a data file (not code) so operators can edit them.
+  The assistant wrote a first draft of the wording (assess, evidence, mitigate, escalate, close,
+  plus a manual-review checklist); I reviewed it against what I do on shift (see next entry).
 
 ## Accepted, changed, rejected
 

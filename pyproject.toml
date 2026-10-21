@@ -15,6 +15,9 @@ dev = ["pytest==9.1.1", "ruff==0.17.1", "build==1.6.1"]
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+alert_triage = ["data/*.yaml"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"

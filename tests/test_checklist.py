@@ -1,0 +1,60 @@
+import pytest
+
+from alert_triage.checklist import ChecklistError, build_checklist, load_checklists
+from alert_triage.rules import KNOWN_ALERTS, classify
+from alert_triage.validation import parse_alert
+
+
+@pytest.fixture(scope="module")
+def templates():
+    return load_checklists()
+
+
+def checklist_for(templates, catalog, alert_data, **changes):
+    alert = parse_alert({**alert_data, **changes})
+    return build_checklist(templates, classify(alert, catalog), alert, "T-0042")
+
+
+def test_evidence_comes_before_mitigation(templates, catalog, alert_data):
+    steps = checklist_for(templates, catalog, alert_data)
+    evidence = next(i for i, s in enumerate(steps) if s.startswith("List deployments"))
+    rollback = next(i for i, s in enumerate(steps) if "roll it back" in s)
+    assert steps[0].startswith("Acknowledge ticket T-0042 (P2)")
+    assert evidence < rollback
+
+
+def test_placeholders_are_filled(templates, catalog, alert_data):
+    text = "\n".join(checklist_for(templates, catalog, alert_data))
+    assert "{" not in text
+    assert "0.07 vs threshold 0.05" in text
+    assert "https://runbooks.example.com/checkout-api" in text
+
+
+def test_p1_has_escalation_and_incident_steps(templates, catalog, alert_data):
+    steps = checklist_for(templates, catalog, alert_data, name="ServiceDown")
+    assert "within 15 minutes, escalate to payments-oncall-lead" in "\n".join(steps)
+    assert any(s.startswith("Open an incident") for s in steps)
+    assert steps[-1].startswith("Record what you saw")
+
+
+def test_p3_has_no_escalation_step(templates, catalog, alert_data):
+    steps = checklist_for(templates, catalog, alert_data, service="report-builder")
+    assert not any("escalate to" in s for s in steps)
+
+
+def test_manual_review_checklist_says_do_not_change_anything(templates, catalog, alert_data):
+    steps = checklist_for(templates, catalog, alert_data, service="mystery-svc")
+    assert steps[0].startswith("Do not change anything yet")
+    assert "'mystery-svc'" in steps[1]
+
+
+@pytest.mark.parametrize("name", KNOWN_ALERTS)
+def test_every_known_alert_type_renders(templates, catalog, alert_data, name):
+    assert checklist_for(templates, catalog, alert_data, name=name)
+
+
+def test_missing_alert_type_in_templates_is_an_error(tmp_path):
+    path = tmp_path / "checklists.yaml"
+    path.write_text("assess: []\nalerts: {}\nescalate: {}\nclose: []\nmanual_review: []\n")
+    with pytest.raises(ChecklistError, match="HighErrorRate"):
+        load_checklists(path)
