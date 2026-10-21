@@ -75,16 +75,63 @@ Kept as I worked, newest last. Each entry says what I asked, what came back, and
     as JSON. Fixed the tests; the program output was correct.
 - Checked rather than assumed: the GitHub Actions versions in the CI file against the latest
   releases (checkout v7, setup-python v7, upload-artifact v7).
-- Not verified: the Docker image. Docker was not running on my laptop during this session.
+- Docker was not running when the image was first written, so it was left unverified. I started
+  Docker later in the session and the image was built and run on the examples: same summary and
+  exit code as the local run, running as uid 1000, not root.
+- README pass. Before writing the README, the assistant compared the code with the exercise text
+  and pointed out a gap: "identify likely customer impact" was only implied by the reason text.
+  It proposed an explicit impact line per priority with draft wording; I accepted the wording.
+  The impact is also added to the ticket and page payloads, so the person who opens the ticket
+  sees it.
+- The assistant also noticed that the checklist asked "is it failing for users?" on staging,
+  where there are no real customers. I chose to replace it, for non-prod only, with "who is
+  blocked: is staging needed for testing or a release right now?".
 
 ## Accepted, changed, rejected
 
-To be filled in as decisions are made.
+**My decisions** (the assistant offered options, I picked): the P1-P4 scale and its rules,
+P3 for internal prod and P4 for staging, deduplication until resolved, 15/30 minute escalation,
+the checklist content and its guardrails, the non-prod impact question, verifying Docker rather
+than dropping it.
+
+**Accepted from the assistant after review:** the module layout and stdlib validation; ignoring
+redelivered ids; manual review for threshold alerts without numbers and for thresholds of 0 or
+less; raising priority on a worse duplicate; send-before-save with idempotency keys; content hash
+for dead-letter keys; the exit codes; the impact wording.
+
+**Changed:** the checklist draft (order, common evidence, change window anchored to the alert
+start, guardrails); the staging rule, after the first draft assumed a 3-level scale;
+`str, Enum` to `StrEnum` after the linter flagged it.
+
+**Rejected or left out on purpose:** a validation library (pydantic), to keep every rule visible;
+any real integration (paging, ticketing, chat), as the exercise requires; automatic remediation
+steps such as restarts, because the tool should guide a person, not change production; lowering
+priority on a duplicate, because a single lower reading does not prove the problem is smaller.
 
 ## Verification
 
-To be filled in.
+- 82 automated tests (`make test`) covering normal alerts, every priority, boundaries
+  (exactly 2x threshold, just below it, threshold 0), malformed and unreadable input, unknown
+  service / environment / alert type, duplicates and redeliveries, priority raise, resolve,
+  corrupt state, missing catalog, and the CLI exit codes.
+- `ruff check` and `ruff format --check` in `make lint`; the same `make ci` target runs in the
+  GitHub Actions workflow.
+- `make demo` run by hand and the output read line by line against the README rules. Running it
+  a second time on the same input creates no new tickets or pages.
+- Wheel and sdist built with `make build`; Docker image built and run on the examples.
+- I read every module and can explain each rule. Where a test failed, I checked whether the code
+  or the test was wrong before changing anything (three times it was the test).
 
 ## Limitations and risks
 
-To be filled in.
+Things I would not ship without more work (also listed in the README):
+
+- State is a single JSON file with no locking. Two runs at the same time can overwrite each
+  other. Production needs a database with unique constraints.
+- An item stays open until a `resolved` alert arrives. If that alert is lost, the item never
+  closes and new alerts for it are counted as duplicates. Needs a maximum age or a reconcile job
+  against the monitoring system.
+- Escalation times are written into the ticket but nothing enforces them; there is no timer.
+- The processed-id list grows forever; it needs a retention period.
+- The rules and checklist wording are mine and the assistant's, checked against my own shift
+  experience, not reviewed by the owning teams.
