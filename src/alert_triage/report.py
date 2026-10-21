@@ -6,8 +6,16 @@ from pathlib import PurePath
 from alert_triage.models import Outcome, TriageResult
 
 LEGEND = [
-    ("P1", "Prod, customers affected, outage or errors at least 2x threshold. Page now."),
-    ("P2", "Prod, customers affected. Page."),
+    (
+        "P1",
+        "Prod, customers affected, outage or errors at least 2x threshold. Pages EOC on-call; "
+        "auto-escalates if not acknowledged in 5 min.",
+    ),
+    (
+        "P2",
+        "Prod, customers affected. Pages EOC on-call; auto-escalates if not acknowledged in "
+        "15 min.",
+    ),
     ("P3", "Prod, internal service. Ticket only."),
     ("P4", "Non-prod (staging). Ticket only."),
     ("review", "The rules cannot decide. A person looks at it; nothing is guessed."),
@@ -102,11 +110,14 @@ def _why(r: TriageResult) -> str:
     extra = []
     if r.impact:
         extra.append(f"<p><b>Impact:</b> {escape(r.impact)}</p>")
-    if r.escalate_after_minutes:
+    if r.ack_timeout_minutes:
         extra.append(
-            f"<p><b>Escalate:</b> {escape(r.escalation or '')} after "
-            f"{r.escalate_after_minutes} min</p>"
+            f"<p><b>Page:</b> {escape(r.page_to or '')}. Not acknowledged in "
+            f"{r.ack_timeout_minutes} min: escalates automatically to "
+            f"{escape(r.escalation or '')}.</p>"
         )
+    if r.escalation:
+        extra.append(f"<p><b>Escalate when the runbook says so:</b> {escape(r.escalation)}</p>")
     if r.runbook:
         extra.append(f"<p><b>Runbook:</b> <code>{escape(r.runbook)}</code></p>")
     steps = "".join(f"<li>{escape(step)}</li>" for step in r.checklist)

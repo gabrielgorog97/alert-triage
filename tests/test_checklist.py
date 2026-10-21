@@ -34,14 +34,24 @@ def test_placeholders_are_filled(templates, catalog, alert_data):
 
 def test_p1_has_escalation_and_incident_steps(templates, catalog, alert_data):
     steps = checklist_for(templates, catalog, alert_data, name="ServiceDown")
-    assert "within 15 minutes, escalate to payments-oncall-lead" in "\n".join(steps)
+    assert steps[3] == (
+        "Acknowledge the page within 5 minutes. If nobody acknowledges it, it escalates "
+        "automatically to payments-oncall-lead."
+    )
     assert any(s.startswith("Open an incident") for s in steps)
     assert steps[-1].startswith("Before closing ticket T-0042")
 
 
-def test_p3_has_no_escalation_step(templates, catalog, alert_data):
+def test_p3_has_no_page_but_can_still_be_escalated(templates, catalog, alert_data):
     steps = checklist_for(templates, catalog, alert_data, service="report-builder")
-    assert not any(s.startswith("If not mitigated") for s in steps)
+    assert not any(s.startswith("Acknowledge the page") for s in steps)
+    assert any(s.startswith("If the runbook says to escalate") for s in steps)
+
+
+def test_escalation_has_no_timer_it_is_the_on_call_decision(templates, catalog, alert_data):
+    steps = checklist_for(templates, catalog, alert_data)
+    escalation = next(s for s in steps if s.startswith("If the runbook says to escalate"))
+    assert "minutes" not in escalation
 
 
 def test_manual_review_checklist_says_do_not_change_anything(templates, catalog, alert_data):
@@ -77,7 +87,7 @@ def test_impact_without_non_prod_step_is_an_error(tmp_path):
 
 def test_prod_asks_about_customers(templates, catalog, alert_data):
     steps = checklist_for(templates, catalog, alert_data)
-    assert steps[3].startswith("Check customer impact")
+    assert steps[4].startswith("Check customer impact")
 
 
 def test_staging_asks_who_is_blocked_not_about_customers(templates, catalog, alert_data):
@@ -88,7 +98,7 @@ def test_staging_asks_who_is_blocked_not_about_customers(templates, catalog, ale
 
 def test_escalation_asks_for_the_evidence_already_collected(templates, catalog, alert_data):
     steps = checklist_for(templates, catalog, alert_data)
-    escalation = next(s for s in steps if s.startswith("If not mitigated"))
+    escalation = next(s for s in steps if s.startswith("If the runbook says to escalate"))
     assert "what you checked" in escalation
 
 

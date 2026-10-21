@@ -47,7 +47,7 @@ def build_checklist(templates: dict, result: TriageResult, alert: Alert, ticket_
         "started_at": alert.started_at.isoformat(),
         "runbook": result.runbook or "no runbook on file",
         "escalation": result.escalation,
-        "escalate_after_minutes": result.escalate_after_minutes,
+        "ack_timeout_minutes": result.ack_timeout_minutes,
     }
 
     if result.outcome == Outcome.MANUAL_REVIEW:
@@ -55,16 +55,17 @@ def build_checklist(templates: dict, result: TriageResult, alert: Alert, ticket_
     else:
         per_alert = templates["alerts"][alert.name]
         impact = "prod" if alert.environment in PROD_ENVIRONMENTS else "non_prod"
+        paged = result.ack_timeout_minutes is not None
         steps = [
             *templates["assess"],
+            *([templates["escalate"]["ack"]] if paged else []),
             templates["impact"][impact],
             *templates["evidence_common"],
             *per_alert["evidence"],
             templates["guardrail"],
             *per_alert["mitigate"],
         ]
-        if result.escalate_after_minutes:
-            steps.append(templates["escalate"]["paged"])
+        steps.append(templates["escalate"]["manual"])
         if result.priority == Priority.P1:
             steps.append(templates["escalate"]["p1"])
         steps.extend(templates["close"])

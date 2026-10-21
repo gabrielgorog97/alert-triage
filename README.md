@@ -95,9 +95,9 @@ docker run --rm -v "$PWD/examples:/work/examples:ro" alert-triage:local \
 
 | File | Alert | Result | Rule that produced it |
 |---|---|---|---|
-| `01-error-rate` | HighErrorRate, checkout-api prod, 0.07 vs 0.05 | **P2**, page + ticket T-0001, escalate after 30 min | prod and customer-facing; 1.4x threshold is below the 2x line for P1 |
+| `01-error-rate` | HighErrorRate, checkout-api prod, 0.07 vs 0.05 | **P2**, ticket T-0001 + page to EOC on-call (ack within 15 min) | prod and customer-facing; 1.4x threshold is below the 2x line for P1 |
 | `02-latency` | HighLatency, search-api prod, 1.8s vs 0.5s | **P2**, page + ticket T-0002 | prod and customer-facing; latency alone is never P1 (slow is not down) |
-| `03-dependency-down` | DependencyDown, checkout-api prod | **P1**, page + ticket T-0003, escalate after 15 min, open incident | prod, customer-facing, outage-type alert |
+| `03-dependency-down` | DependencyDown, checkout-api prod | **P1**, ticket T-0003 + page to EOC on-call (ack within 5 min), open incident | prod, customer-facing, outage-type alert |
 | `04-repeats` (3 alerts) | `a-1001` again | **ignored** | same `alert_id` already processed: a redelivery |
 | | `a-1002`, 0.08 | **duplicate** of T-0001, no new work | same name + service + environment still open |
 | | `a-1003`, 0.15 | **duplicate**, priority raised P2 to P1, new page | 3x threshold is P1; a worse repeat must not stay hidden |
@@ -142,24 +142,26 @@ checklist:
      what: 7% of checkout requests return 5xx over the last 5 minutes
      impact: Customers likely affected: checkout-api is customer-facing in prod (HighErrorRate: some requests fail).
      why: prod, customer-facing, HighErrorRate above threshold; opened T-0001
-     escalate: payments-oncall-lead after 30 min
+     page: eoc-oncall; not acknowledged in 15 min -> escalates automatically to payments-oncall-lead
+     escalate when the runbook says so: payments-oncall-lead
      checklist:
        1. Read the alert: priority P2, what happened, service checkout-api, environment prod.
        2. Open the runbook before doing anything else: https://runbooks.example.com/checkout-api
        3. Acknowledge ticket T-0001 so others know it is being handled.
-       4. Check customer impact: is checkout-api in prod failing for users right now?
-       5. Save the relevant Grafana dashboard panels (traffic, errors, latency) for the time around 2026-10-21T08:00:00+00:00.
-       6. Check the Kubernetes state of checkout-api: pod status, restarts, recent events.
-       7. Collect logs from checkout-api for the time around 2026-10-21T08:00:00+00:00; put a sample in the ticket.
-       8. Test checkout-api yourself as a customer would (call the affected endpoint) and record the result.
-       9. Check code, deploy and config changes to checkout-api in the hours before 2026-10-21T08:00:00+00:00.
-       10. Check whether planned maintenance or a change window covers checkout-api or its dependencies.
-       11. Note the error rate (0.07 vs threshold 0.05) and group errors by endpoint and status code.
-       12. Check the dependencies listed in the runbook for errors at the same time.
-       13. Only do steps the runbook gives to the on-call / EOC role. If a step belongs to another team (for example engineers restart the service), escalate to them instead of doing it yourself.
-       14. If a change lines up with the start time, follow the runbook's rollback procedure.
-       15. If not mitigated within 30 minutes, escalate to payments-oncall-lead. Include what you checked, the evidence collected, and what you already tried.
-       16. Before closing ticket T-0001, write down what was checked, what happened, and how it was resolved. Do not close it without this.
+       4. Acknowledge the page within 15 minutes. If nobody acknowledges it, it escalates automatically to payments-oncall-lead.
+       5. Check customer impact: is checkout-api in prod failing for users right now?
+       6. Save the relevant Grafana dashboard panels (traffic, errors, latency) for the time around 2026-10-21T08:00:00+00:00.
+       7. Check the Kubernetes state of checkout-api: pod status, restarts, recent events.
+       8. Collect logs from checkout-api for the time around 2026-10-21T08:00:00+00:00; put a sample in the ticket.
+       9. Test checkout-api yourself as a customer would (call the affected endpoint) and record the result.
+       10. Check code, deploy and config changes to checkout-api in the hours before 2026-10-21T08:00:00+00:00.
+       11. Check whether planned maintenance or a change window covers checkout-api or its dependencies.
+       12. Note the error rate (0.07 vs threshold 0.05) and group errors by endpoint and status code.
+       13. Check the dependencies listed in the runbook for errors at the same time.
+       14. Only do steps the runbook gives to the on-call / EOC role. If a step belongs to another team (for example engineers restart the service), escalate to them instead of doing it yourself.
+       15. If a change lines up with the start time, follow the runbook's rollback procedure.
+       16. If the runbook says to escalate, or you cannot mitigate it, escalate to payments-oncall-lead. Include what you checked, the evidence collected, and what you already tried.
+       17. Before closing ticket T-0001, write down what was checked, what happened, and how it was resolved. Do not close it without this.
 
 [--] a-7001  HighErrorRate  loyalty-points/prod  -> manual_review  T-0006  owner=eoc-triage  notify=ticket
      what: errors on a service nobody added to the catalog
@@ -174,7 +176,7 @@ checklist:
 ```
 
 `--json` prints the same results as objects (`priority`, `impact`, `owner`, `escalation`,
-`escalate_after_minutes`, `notify`, `reasons`, `checklist`, `ticket_id`, ...) plus a `summary`
+`page_to`, `ack_timeout_minutes`, `notify`, `reasons`, `checklist`, `ticket_id`, ...) plus a `summary`
 with counts. Each line in `outbox/events.jsonl` is one simulated action with its idempotency key,
 for example:
 
@@ -260,12 +262,18 @@ Evaluated in this order; the first rule that applies wins. Code: `src/alert_tria
      threshold is 0 or less
 7. **Priority:**
 
-| Priority | When | Notify | Escalate if not mitigated |
+| Priority | When | Notify | Automatic escalation |
 |---|---|---|---|
-| P1 | prod, customer-facing, and `ServiceDown`, `DependencyDown`, or error rate at least 2x threshold | page + ticket | after 15 min, plus open an incident |
-| P2 | prod, customer-facing, any other known alert | page + ticket | after 30 min |
-| P3 | prod, internal service (not customer-facing) | ticket | no automatic escalation |
-| P4 | any non-prod environment (staging) | ticket | no automatic escalation |
+| P1 | prod, customer-facing, and `ServiceDown`, `DependencyDown`, or error rate at least 2x threshold | ticket + page to EOC on-call, open an incident | only if the page is not acknowledged in 5 min |
+| P2 | prod, customer-facing, any other known alert | ticket + page to EOC on-call | only if the page is not acknowledged in 15 min |
+| P3 | prod, internal service (not customer-facing) | ticket | none |
+| P4 | any non-prod environment (staging) | ticket | none |
+
+**Escalation.** The page goes to the EOC on-call engineer, who investigates. Escalating to the
+service team (`escalation` in the catalog) is that engineer's decision, when the runbook says so
+or the problem cannot be mitigated; there is no timer on it. The only automatic escalation is for
+a missed page: if nobody acknowledges it in time, it goes to the service's escalation contact.
+In production that timer belongs to the paging tool's escalation policy, not to this program.
 
 Known alert types: `HighErrorRate`, `HighLatency`, `DependencyDown`, `ServiceDown`.
 
@@ -286,7 +294,9 @@ The order is deliberate:
    to the alert type.
 4. Guardrail: only steps the runbook gives to the on-call role; other teams' steps are escalated.
 5. Mitigation from the runbook.
-6. Escalation (P1/P2) with the evidence already collected; P1 also opens an incident.
+6. Escalation when the runbook says so or it cannot be mitigated, with the evidence already
+   collected; P1 also opens an incident. Paged alerts also say how long the page has before it
+   escalates automatically.
 7. Do not close the ticket without writing what was checked, what happened and how it was fixed.
 
 A template file that is missing a section or an alert type stops the run (exit 3), instead of
@@ -326,7 +336,7 @@ producing an incomplete checklist.
 make test
 ```
 
-89 tests, no network, each with a temporary state and outbox:
+90 tests, no network, each with a temporary state and outbox:
 
 | Area | File | Examples |
 |---|---|---|
@@ -404,8 +414,9 @@ so "why did this page at 3 a.m.?" has an exact answer.
   lost, the item never closes and new alerts for it only count as duplicates. A `resolved` that
   arrives before its `firing` alert is ignored, and the later `firing` opens an item that stays
   open. Needs a maximum age or a reconcile job against the monitoring system.
-- **Escalation is not enforced.** The time to escalate is written into the ticket and checklist,
-  but nothing re-pages when it passes.
+- **No acknowledgement timer here.** The ack timeout and the escalation contact are sent with the
+  page, but this program does not wait for an acknowledgement; in production the paging tool's
+  escalation policy does.
 - **Priority only goes up.** A lower repeat does not lower the priority; a person decides that.
 - **Unbounded memory.** The processed-id list grows forever; it needs a retention period.
 - **Recovery closes the ticket automatically.** When monitoring sends `resolved`, the ticket is
@@ -432,6 +443,7 @@ With another day I would:
 2. Add the Alertmanager webhook receiver and an outbox worker with retries, keeping the CLI for
    batch and testing.
 3. Add a maximum age for open items and a reconcile step against the monitoring system.
-4. Add an escalation timer that re-pages the escalation contact when the time passes.
+4. Map priorities to escalation policies in the paging tool (who is primary, ack timeouts), so
+   the policy lives in one place.
 5. Record the rules/catalog version with every decision.
 6. Have the checklist wording reviewed by the teams who own the runbooks.

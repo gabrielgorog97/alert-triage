@@ -20,7 +20,7 @@ Kept as I worked, newest last. Each entry says what I asked, what came back, and
   - P1 only for prod, customer-facing, and service down, dependency down, or errors at 2x threshold.
   - P3 for prod internal services, P4 for staging; neither pages anyone.
   - Duplicates stay duplicates until a resolved alert closes them, not a fixed time window.
-  - Escalation after 15 min for P1, 30 min for P2, none for P3/P4.
+  - Escalation after 15 min for P1, 30 min for P2, none for P3/P4 (later replaced, see below).
 - The assistant first wrote the staging answer for a 3-level scale; after I picked 4 levels it
   asked where staging goes instead of guessing, and I split P3/P4 as above.
 - Two rules were the assistant's proposal, which I accepted: ignore a redelivered `alert_id`, and
@@ -109,13 +109,18 @@ Kept as I worked, newest last. Each entry says what I asked, what came back, and
     auto-close on purpose and listed the tension as a limitation.
   - Duplicates: I asked how we know a repeat did not get worse. That was already handled (a worse
     repeat raises the priority and pages); a same-id redelivery is the exact same message.
+- Escalation model, my correction. The first version escalated to the service team automatically
+  after 15/30 minutes, even while the on-call engineer was working on it. I changed it to how
+  on-call works: P1/P2 page the EOC on-call; escalating to the service team is the engineer's
+  decision, following the runbook; the only automatic escalation is for a page nobody
+  acknowledges (5 min for P1, 15 min for P2), and it goes to the service's escalation contact.
 - Five existing tests failed after these changes because they checked the old behaviour; I
   rewrote them for the new rules and added tests for reopen, flapping and rejected tickets.
 
 ## Accepted, changed, rejected
 
 **My decisions** (the assistant offered options, I picked): the P1-P4 scale and its rules,
-P3 for internal prod and P4 for staging, deduplication until resolved, 15/30 minute escalation,
+P3 for internal prod and P4 for staging, deduplication until resolved, paging EOC with automatic escalation only for an unacknowledged page (5/15 min),
 the checklist content and its guardrails, the non-prod impact question, verifying Docker rather
 than dropping it, a short table plus HTML report instead of a web app.
 
@@ -125,7 +130,8 @@ less; raising priority on a worse duplicate; send-before-save with idempotency k
 for dead-letter keys; the exit codes; the impact wording.
 
 **Found by me in review and changed:** unreadable alerts now open a ticket instead of only
-going to the dead letter; flapping alerts reopen one ticket instead of opening new ones.
+going to the dead letter; flapping alerts reopen one ticket instead of opening new ones;
+escalation is the on-call engineer's decision, automatic only for an unacknowledged page.
 
 **Changed:** the checklist draft (order, common evidence, change window anchored to the alert
 start, guardrails); the staging rule, after the first draft assumed a 3-level scale;
@@ -138,7 +144,7 @@ priority on a duplicate, because a single lower reading does not prove the probl
 
 ## Verification
 
-- 89 automated tests (`make test`) covering normal alerts, every priority, boundaries
+- 90 automated tests (`make test`) covering normal alerts, every priority, boundaries
   (exactly 2x threshold, just below it, threshold 0), malformed and unreadable input, unknown
   service / environment / alert type, duplicates and redeliveries, priority raise, resolve,
   corrupt state, missing catalog, and the CLI exit codes.

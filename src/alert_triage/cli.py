@@ -163,8 +163,13 @@ def _as_text(results, counts, needs_review) -> str:
                 lines.append(f"     what: {r.description}")
             lines.append(f"     impact: {r.impact}")
             lines.append(f"     why: {'; '.join(r.reasons)}")
-            if r.escalate_after_minutes:
-                lines.append(f"     escalate: {r.escalation} after {r.escalate_after_minutes} min")
+            if r.ack_timeout_minutes:
+                lines.append(
+                    f"     page: {r.page_to}; not acknowledged in {r.ack_timeout_minutes} min"
+                    f" -> escalates automatically to {r.escalation}"
+                )
+            if r.escalation:
+                lines.append(f"     escalate when the runbook says so: {r.escalation}")
             lines.append("     checklist:")
             lines.extend(f"       {i}. {step}" for i, step in enumerate(r.checklist, 1))
         elif r.outcome == Outcome.REJECTED:

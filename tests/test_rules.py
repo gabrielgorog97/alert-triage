@@ -14,7 +14,8 @@ def test_error_rate_above_threshold_is_p2(alert_data, catalog):
     assert result.outcome == Outcome.TRIAGED
     assert result.priority == Priority.P2
     assert result.notify == ["page", "ticket"]
-    assert result.escalate_after_minutes == 30
+    assert result.page_to == "eoc-oncall"
+    assert result.ack_timeout_minutes == 15
     assert result.owner == "payments-team"
 
 
@@ -22,7 +23,7 @@ def test_error_rate_above_threshold_is_p2(alert_data, catalog):
 def test_error_rate_at_or_above_twice_threshold_is_p1(alert_data, catalog, value):
     result = triage(alert_data, catalog, value=value)
     assert result.priority == Priority.P1
-    assert result.escalate_after_minutes == 15
+    assert result.ack_timeout_minutes == 5
     assert result.escalation == "payments-oncall-lead"
 
 
@@ -45,8 +46,9 @@ def test_internal_prod_service_is_p3_ticket_only(alert_data, catalog):
     result = triage(alert_data, catalog, service="report-builder", name="ServiceDown")
     assert result.priority == Priority.P3
     assert result.notify == ["ticket"]
-    assert result.escalate_after_minutes is None
-    assert result.escalation is None
+    assert result.ack_timeout_minutes is None
+    assert result.page_to is None
+    assert result.escalation == "data-oncall-lead"
 
 
 def test_staging_is_p4_even_for_an_outage(alert_data, catalog):

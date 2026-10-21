@@ -7,8 +7,11 @@ THRESHOLD_ALERTS = ("HighErrorRate", "HighLatency")
 OUTAGE_ALERTS = ("ServiceDown", "DependencyDown")
 PROD_ENVIRONMENTS = ("prod",)
 
-ESCALATE_AFTER_MINUTES = {Priority.P1: 15, Priority.P2: 30}
-PAGED_PRIORITIES = (Priority.P1, Priority.P2)
+# P1/P2 page the EOC on-call. If the page is not acknowledged in time, the paging tool escalates
+# to the service's escalation contact. Any other escalation is the on-call person's decision.
+EOC_ONCALL = "eoc-oncall"
+ACK_TIMEOUT_MINUTES = {Priority.P1: 5, Priority.P2: 15}
+PAGED_PRIORITIES = tuple(ACK_TIMEOUT_MINUTES)
 MANUAL_REVIEW_QUEUE = "eoc-triage"
 REOPEN_WINDOW_MINUTES = 30
 FLAPPING_AFTER_REOPENS = 3
@@ -44,8 +47,9 @@ def classify(alert: Alert, catalog: dict[str, Service]) -> TriageResult:
         priority=priority,
         impact=_impact(alert, priority),
         owner=service.owner,
-        escalation=service.escalation if priority in ESCALATE_AFTER_MINUTES else None,
-        escalate_after_minutes=ESCALATE_AFTER_MINUTES.get(priority),
+        escalation=service.escalation,
+        page_to=EOC_ONCALL if priority in PAGED_PRIORITIES else None,
+        ack_timeout_minutes=ACK_TIMEOUT_MINUTES.get(priority),
         notify=["page", "ticket"] if priority in PAGED_PRIORITIES else ["ticket"],
         reasons=[reason],
         runbook=service.runbook,

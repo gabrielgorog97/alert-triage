@@ -50,8 +50,11 @@ alerts:
 # Always shown right before the mitigation steps.
 guardrail: "Only do steps the runbook gives to the on-call / EOC role. If a step belongs to another team (for example engineers restart the service), escalate to them instead of doing it yourself."
 
+# Escalation is a decision of the on-call person, following the runbook. The only automatic
+# escalation is the paging tool's, when nobody acknowledges the page in time.
 escalate:
-  paged: "If not mitigated within {escalate_after_minutes} minutes, escalate to {escalation}. Include what you checked, the evidence collected, and what you already tried."
+  ack: "Acknowledge the page within {ack_timeout_minutes} minutes. If nobody acknowledges it, it escalates automatically to {escalation}."
+  manual: "If the runbook says to escalate, or you cannot mitigate it, escalate to {escalation}. Include what you checked, the evidence collected, and what you already tried."
   p1: "Open an incident and assign someone to customer communication."
 
 close:
