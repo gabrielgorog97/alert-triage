@@ -116,6 +116,13 @@ def test_repeated_ambiguous_alert_creates_one_review_ticket(engine, outbox, aler
     assert outbox.events[0]["owner"] == "eoc-triage"
 
 
+def test_ticket_carries_description_and_impact(engine, outbox, alert_data):
+    engine.process({**alert_data, "description": "7% of checkout requests fail"})
+    ticket = outbox.events[0]
+    assert ticket["description"] == "7% of checkout requests fail"
+    assert ticket["impact"].startswith("Customers likely affected: checkout-api")
+
+
 def test_state_survives_a_restart(catalog, tmp_path, alert_data):
     first = make_engine(catalog, tmp_path, MemoryOutbox())
     first.process(alert(alert_data, "a-1"))

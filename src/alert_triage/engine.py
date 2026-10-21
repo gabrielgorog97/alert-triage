@@ -79,6 +79,7 @@ class TriageEngine:
 
     def _open(self, alert) -> TriageResult:
         result = classify(alert, self.catalog)
+        result.description = alert.description
         ticket_id = self.state.new_ticket_id()
         result.ticket_id = ticket_id
         result.checklist = build_checklist(self.checklists, result, alert, ticket_id)
@@ -170,6 +171,8 @@ def _summary(result: TriageResult) -> dict:
     return {
         "outcome": result.outcome.value,
         "priority": result.priority.value if result.priority else None,
+        "description": result.description,
+        "impact": result.impact,
         "owner": result.owner,
         "escalation": result.escalation,
         "escalate_after_minutes": result.escalate_after_minutes,
