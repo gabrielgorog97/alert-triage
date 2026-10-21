@@ -127,6 +127,10 @@ Kept as I worked, newest last. Each entry says what I asked, what came back, and
   alert first, because EOC is the first response for all of them; the team is escalated to only
   when EOC cannot fix or troubleshoot it. Only P1/P2 page; how a P3/P4 arrives is each
   engineer's Opsgenie notification rules.
+- Checklist start, my decision. The first steps are now: acknowledge, read the alert, check
+  impact, open the runbook. Earlier I had put reading the alert and the runbook before
+  acknowledging; with Opsgenie, acknowledging first is what stops the escalation timer and tells
+  the rest of the team someone is on it, so it moved back to step 1.
 
 ## Accepted, changed, rejected
 

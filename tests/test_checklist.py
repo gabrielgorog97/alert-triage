@@ -20,8 +20,10 @@ def test_evidence_comes_before_mitigation(templates, catalog, alert_data):
     evidence = next(i for i, s in enumerate(steps) if s.startswith("Check code, deploy"))
     guardrail = next(i for i, s in enumerate(steps) if s.startswith("Only do steps the runbook"))
     rollback = next(i for i, s in enumerate(steps) if "rollback procedure" in s)
-    assert steps[0].startswith("Read the alert: priority P2")
-    assert steps[1].startswith("Open the runbook")
+    assert steps[0].startswith("Acknowledge Opsgenie alert OG-0042")
+    assert steps[1].startswith("Read the alert: priority P2")
+    assert steps[2].startswith("Check customer impact")
+    assert steps[3].startswith("Open the runbook")
     assert evidence < guardrail < rollback
 
 
@@ -34,9 +36,9 @@ def test_placeholders_are_filled(templates, catalog, alert_data):
 
 def test_p1_has_escalation_and_incident_steps(templates, catalog, alert_data):
     steps = checklist_for(templates, catalog, alert_data, name="ServiceDown")
-    assert steps[3] == (
-        "If nobody acknowledges the alert within 5 minutes, Opsgenie escalates it "
-        "automatically to payments-oncall-lead."
+    assert steps[0] == (
+        "Acknowledge Opsgenie alert OG-0042 so others know it is being handled. Do it within "
+        "5 minutes: after that Opsgenie escalates it automatically to payments-oncall-lead."
     )
     assert any(s.startswith("Open an Opsgenie incident") for s in steps)
     assert steps[-1].startswith("Before closing Opsgenie alert OG-0042")
@@ -44,7 +46,7 @@ def test_p1_has_escalation_and_incident_steps(templates, catalog, alert_data):
 
 def test_p3_has_no_page_but_can_still_be_escalated(templates, catalog, alert_data):
     steps = checklist_for(templates, catalog, alert_data, service="report-builder")
-    assert not any(s.startswith("If nobody acknowledges") for s in steps)
+    assert steps[0] == "Acknowledge Opsgenie alert OG-0042 so others know it is being handled."
     assert any(s.startswith("If the runbook says to escalate") for s in steps)
 
 
@@ -68,7 +70,8 @@ def test_every_known_alert_type_renders(templates, catalog, alert_data, name):
 def test_missing_alert_type_in_templates_is_an_error(tmp_path):
     path = tmp_path / "checklists.yaml"
     path.write_text(
-        "assess: []\nimpact: {prod: x, non_prod: y}\nevidence_common: []\nalerts: {}\n"
+        "acknowledge: x\nread: x\nimpact: {prod: x, non_prod: y}\nrunbook: x\n"
+        "evidence_common: []\nalerts: {}\n"
         "guardrail: x\nescalate: {}\nclose: []\nmanual_review: []\nrejected: []\n"
     )
     with pytest.raises(ChecklistError, match="HighErrorRate"):
@@ -78,7 +81,7 @@ def test_missing_alert_type_in_templates_is_an_error(tmp_path):
 def test_impact_without_non_prod_step_is_an_error(tmp_path):
     path = tmp_path / "checklists.yaml"
     path.write_text(
-        "assess: []\nimpact: {prod: x}\nevidence_common: []\nalerts: {}\n"
+        "acknowledge: x\nread: x\nimpact: {prod: x}\nrunbook: x\nevidence_common: []\nalerts: {}\n"
         "guardrail: x\nescalate: {}\nclose: []\nmanual_review: []\nrejected: []\n"
     )
     with pytest.raises(ChecklistError, match="non_prod"):
@@ -87,12 +90,12 @@ def test_impact_without_non_prod_step_is_an_error(tmp_path):
 
 def test_prod_asks_about_customers(templates, catalog, alert_data):
     steps = checklist_for(templates, catalog, alert_data)
-    assert steps[4].startswith("Check customer impact")
+    assert steps[2].startswith("Check customer impact")
 
 
 def test_staging_asks_who_is_blocked_not_about_customers(templates, catalog, alert_data):
     steps = checklist_for(templates, catalog, alert_data, environment="staging")
-    assert steps[3].startswith("Check who is blocked: is staging needed")
+    assert steps[2].startswith("Check who is blocked: is staging needed")
     assert not any("customer impact" in s for s in steps)
 
 
@@ -104,6 +107,6 @@ def test_escalation_asks_for_the_evidence_already_collected(templates, catalog, 
 
 def test_missing_section_is_an_error(tmp_path):
     path = tmp_path / "checklists.yaml"
-    path.write_text("assess: []\n")
+    path.write_text("acknowledge: x\nread: x\n")
     with pytest.raises(ChecklistError, match="'impact'"):
         load_checklists(path)

@@ -22,7 +22,17 @@ def load_checklists(path: Path | None = None) -> dict:
     except (OSError, yaml.YAMLError) as exc:
         raise ChecklistError(f"cannot load checklists: {exc}") from exc
 
-    required = ("assess", "impact", "evidence_common", "alerts", "guardrail", "escalate", "close")
+    required = (
+        "acknowledge",
+        "read",
+        "impact",
+        "runbook",
+        "evidence_common",
+        "alerts",
+        "guardrail",
+        "escalate",
+        "close",
+    )
     for key in (*required, "manual_review", "rejected"):
         if not isinstance(data, dict) or key not in data:
             raise ChecklistError(f"checklists are missing '{key}'")
@@ -55,10 +65,14 @@ def build_checklist(templates: dict, result: TriageResult, alert: Alert, opsgeni
     else:
         per_alert = templates["alerts"][alert.name]
         impact = "prod" if alert.environment in PROD_ENVIRONMENTS else "non_prod"
+        acknowledge = templates["acknowledge"]
+        if result.page:
+            acknowledge += " " + templates["escalate"]["ack"]
         steps = [
-            *templates["assess"],
-            *([templates["escalate"]["ack"]] if result.page else []),
+            acknowledge,
+            templates["read"],
             templates["impact"][impact],
+            templates["runbook"],
             *templates["evidence_common"],
             *per_alert["evidence"],
             templates["guardrail"],

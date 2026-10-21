@@ -145,23 +145,22 @@ checklist:
      pages eoc-oncall; not acknowledged in 15 min -> Opsgenie escalates to payments-oncall-lead
      escalate when the runbook says so: payments-oncall-lead
      checklist:
-       1. Read the alert: priority P2, what happened, service checkout-api, environment prod.
-       2. Open the runbook before doing anything else: https://runbooks.example.com/checkout-api
-       3. Acknowledge Opsgenie alert OG-0001 so others know it is being handled.
-       4. If nobody acknowledges the alert within 15 minutes, Opsgenie escalates it automatically to payments-oncall-lead.
-       5. Check customer impact: is checkout-api in prod failing for users right now?
-       6. Save the relevant Grafana dashboard panels (traffic, errors, latency) for the time around 2026-10-21T08:00:00+00:00.
-       7. Check the Kubernetes state of checkout-api: pod status, restarts, recent events.
-       8. Collect logs from checkout-api for the time around 2026-10-21T08:00:00+00:00; add a sample as a note on the Opsgenie alert.
-       9. Test checkout-api yourself as a customer would (call the affected endpoint) and record the result.
-       10. Check code, deploy and config changes to checkout-api in the hours before 2026-10-21T08:00:00+00:00.
-       11. Check whether planned maintenance or a change window covers checkout-api or its dependencies.
-       12. Note the error rate (0.07 vs threshold 0.05) and group errors by endpoint and status code.
-       13. Check the dependencies listed in the runbook for errors at the same time.
-       14. Only do steps the runbook gives to the on-call / EOC role. If a step belongs to another team (for example engineers restart the service), escalate to them instead of doing it yourself.
-       15. If a change lines up with the start time, follow the runbook's rollback procedure.
-       16. If the runbook says to escalate, or you cannot mitigate it, escalate to payments-oncall-lead. Include what you checked, the evidence collected, and what you already tried.
-       17. Before closing Opsgenie alert OG-0001, add a note with what was checked, what happened, and how it was resolved. Do not close it without this.
+       1. Acknowledge Opsgenie alert OG-0001 so others know it is being handled. Do it within 15 minutes: after that Opsgenie escalates it automatically to payments-oncall-lead.
+       2. Read the alert: priority P2, what happened, service checkout-api, environment prod.
+       3. Check customer impact: is checkout-api in prod failing for users right now?
+       4. Open the runbook before changing anything: https://runbooks.example.com/checkout-api
+       5. Save the relevant Grafana dashboard panels (traffic, errors, latency) for the time around 2026-10-21T08:00:00+00:00.
+       6. Check the Kubernetes state of checkout-api: pod status, restarts, recent events.
+       7. Collect logs from checkout-api for the time around 2026-10-21T08:00:00+00:00; add a sample as a note on the Opsgenie alert.
+       8. Test checkout-api yourself as a customer would (call the affected endpoint) and record the result.
+       9. Check code, deploy and config changes to checkout-api in the hours before 2026-10-21T08:00:00+00:00.
+       10. Check whether planned maintenance or a change window covers checkout-api or its dependencies.
+       11. Note the error rate (0.07 vs threshold 0.05) and group errors by endpoint and status code.
+       12. Check the dependencies listed in the runbook for errors at the same time.
+       13. Only do steps the runbook gives to the on-call / EOC role. If a step belongs to another team (for example engineers restart the service), escalate to them instead of doing it yourself.
+       14. If a change lines up with the start time, follow the runbook's rollback procedure.
+       15. If the runbook says to escalate, or you cannot mitigate it, escalate to payments-oncall-lead. Include what you checked, the evidence collected, and what you already tried.
+       16. Before closing Opsgenie alert OG-0001, add a note with what was checked, what happened, and how it was resolved. Do not close it without this.
 
 [--] a-7001  HighErrorRate  loyalty-points/prod  -> manual_review  OG-0006  owner=eoc-triage  page=no
      what: errors on a service nobody added to the catalog
@@ -298,16 +297,17 @@ Templates live in `src/alert_triage/data/checklists.yaml`, not in code, so the p
 shift can change the wording without a code change (or pass their own file with `--checklists`).
 The order is deliberate:
 
-1. Read the alert, open the runbook and acknowledge the Opsgenie alert before anything else.
-2. Check impact (customers in prod; "who is blocked" in non-prod).
+1. Acknowledge the Opsgenie alert first: it stops the escalation timer and tells others someone
+   is on it. Paged alerts also say how long there is before Opsgenie escalates.
+2. Read the alert, check impact (customers in prod; "who is blocked" in non-prod), then open the
+   runbook before changing anything.
 3. Collect evidence for every alert type: dashboards, Kubernetes state, logs, test as a customer,
    changes in the hours before the alert started, planned maintenance. Then the evidence specific
    to the alert type.
 4. Guardrail: only steps the runbook gives to the on-call role; other teams' steps are escalated.
 5. Mitigation from the runbook.
 6. Escalation when the runbook says so or it cannot be mitigated, with the evidence already
-   collected; P1 also opens an incident. Paged alerts also say how long they have before Opsgenie
-   escalates them automatically.
+   collected; P1 also opens an incident.
 7. Do not close the Opsgenie alert without a note on what was checked, what happened and how it
    was fixed.
 

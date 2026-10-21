@@ -44,7 +44,7 @@ def test_new_alert_creates_an_opsgenie_alert_that_pages_eoc(engine, outbox, aler
     assert created["opsgenie_id"] == "OG-0001"
     assert created["alias"] == "HighErrorRate|checkout-api|prod"
     assert (created["page"], created["responders"]) == (True, ["eoc-oncall"])
-    assert created["checklist"][2].startswith("Acknowledge Opsgenie alert OG-0001")
+    assert created["checklist"][0].startswith("Acknowledge Opsgenie alert OG-0001")
 
 
 def test_p3_goes_to_eoc_without_a_page(engine, outbox, alert_data):

@@ -99,7 +99,7 @@ def test_html_report_is_written_and_escaped(tmp_path, capsys):
     assert run(tmp_path, tmp_path / "a.json", extra=["--html", str(report)]) == EXIT_OK
     html = report.read_text()
     assert '<span class="tag P2">P2</span>' in html
-    assert "Impact and checklist (17 steps)" in html
+    assert "Impact and checklist (16 steps)" in html
     assert "<script>" not in html
     assert "&lt;script&gt;" in html
     assert f"HTML report: {report}" in capsys.readouterr().out
