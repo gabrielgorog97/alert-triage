@@ -486,7 +486,7 @@ so "why did this page at 3 a.m.?" has an exact answer.
 
 ## Time spent and next steps
 
-Approximately TODO hours in total, including reading the exercise, design decisions, reviewing and
+Approximately 3 hours in total, including reading the exercise, design decisions, reviewing and
 running the code, and writing the documentation.
 
 With another day I would:
