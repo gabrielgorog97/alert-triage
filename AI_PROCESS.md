@@ -138,6 +138,15 @@ Kept as I worked, newest last. Each entry says what I asked, what came back, and
   leave it as a limitation). I chose one alert per broken monitor, grouped by the readable parts
   and the broken fields. I also decided that a broken alert whose readable part says P1/P2 still
   pages EOC, because a format bug must not hide an outage.
+- Routing and checklist order, reviewed with research. I asked for an honest check of "EOC gets
+  every alert". The assistant looked at how Avalara describes its EOC (first responder for
+  customer-facing production events, incident commander that brings in engineers) and at the
+  "you build it, you run it" model, where alerts go straight to the owning team. My model held
+  for production; for staging it did not, so I moved P4 to the owning team. I also asked whether
+  the maintenance check belonged higher. Triage guides put "planned maintenance?" and "what
+  changed?" in the first minutes, so I moved both right after impact, before the runbook and the
+  rest of the evidence, and the maintenance step now says to confirm the impact is expected
+  instead of ignoring the alert.
 
 ## Accepted, changed, rejected
 
@@ -167,7 +176,7 @@ priority on a duplicate, because a single lower reading does not prove the probl
 
 ## Verification
 
-- 94 automated tests (`make test`) covering normal alerts, every priority, boundaries
+- 95 automated tests (`make test`) covering normal alerts, every priority, boundaries
   (exactly 2x threshold, just below it, threshold 0), malformed and unreadable input, unknown
   service / environment / alert type, duplicates and redeliveries, priority raise, resolve,
   corrupt state, missing catalog, and the CLI exit codes.

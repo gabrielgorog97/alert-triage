@@ -23,8 +23,16 @@ def test_evidence_comes_before_mitigation(templates, catalog, alert_data):
     assert steps[0].startswith("Acknowledge Opsgenie alert OG-0042")
     assert steps[1].startswith("Read the alert: priority P2")
     assert steps[2].startswith("Check customer impact")
-    assert steps[3].startswith("Open the runbook")
+    assert steps[3].startswith("Check whether planned maintenance")
+    assert steps[4].startswith("Check code, deploy and config changes")
+    assert steps[5].startswith("Open the runbook")
     assert evidence < guardrail < rollback
+
+
+def test_maintenance_does_not_mean_ignore(templates, catalog, alert_data):
+    maintenance = checklist_for(templates, catalog, alert_data)[3]
+    assert "confirm with the owner of that work" in maintenance
+    assert "treat it as an incident" in maintenance
 
 
 def test_placeholders_are_filled(templates, catalog, alert_data):
@@ -70,8 +78,8 @@ def test_every_known_alert_type_renders(templates, catalog, alert_data, name):
 def test_missing_alert_type_in_templates_is_an_error(tmp_path):
     path = tmp_path / "checklists.yaml"
     path.write_text(
-        "acknowledge: x\nread: x\nimpact: {prod: x, non_prod: y}\nrunbook: x\n"
-        "evidence_common: []\nalerts: {}\n"
+        "acknowledge: x\nread: x\nimpact: {prod: x, non_prod: y}\n"
+        "maintenance: x\nchanges: x\nrunbook: x\nevidence_common: []\nalerts: {}\n"
         "guardrail: x\nescalate: {}\nclose: []\nmanual_review: []\nrejected: []\n"
     )
     with pytest.raises(ChecklistError, match="HighErrorRate"):
@@ -81,7 +89,8 @@ def test_missing_alert_type_in_templates_is_an_error(tmp_path):
 def test_impact_without_non_prod_step_is_an_error(tmp_path):
     path = tmp_path / "checklists.yaml"
     path.write_text(
-        "acknowledge: x\nread: x\nimpact: {prod: x}\nrunbook: x\nevidence_common: []\nalerts: {}\n"
+        "acknowledge: x\nread: x\nimpact: {prod: x}\nmaintenance: x\nchanges: x\nrunbook: x\n"
+        "evidence_common: []\nalerts: {}\n"
         "guardrail: x\nescalate: {}\nclose: []\nmanual_review: []\nrejected: []\n"
     )
     with pytest.raises(ChecklistError, match="non_prod"):

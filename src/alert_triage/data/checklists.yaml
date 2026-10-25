@@ -1,6 +1,7 @@
 # First-response checklists. Placeholders in {braces} are filled from the alert and the catalog.
-# Order matters: acknowledge, understand the alert and its impact, open the runbook, collect
-# evidence, then change something.
+# Order matters: acknowledge, understand the alert and its impact, rule out the quick
+# explanations (planned work, a recent change), open the runbook, collect evidence, then change
+# something.
 
 # Acknowledging first stops Opsgenie's escalation timer and tells others someone is on it.
 acknowledge: "Acknowledge Opsgenie alert {opsgenie_id} so others know it is being handled."
@@ -11,6 +12,10 @@ impact:
   prod: "Check customer impact: is {service} in {environment} failing for users right now?"
   non_prod: "Check who is blocked: is {environment} needed for testing or a release right now?"
 
+# Planned work and recent changes are the fastest explanations, so they are checked first.
+maintenance: "Check whether planned maintenance or a change window covers {service} or its dependencies. If it does, confirm with the owner of that work that this impact is expected and add a note on the Opsgenie alert; if the impact is larger than planned, treat it as an incident."
+changes: "Check code, deploy and config changes to {service} in the hours before {started_at}."
+
 runbook: "Open the runbook before changing anything: {runbook}"
 
 # Evidence every alert type needs, collected before any change.
@@ -19,8 +24,6 @@ evidence_common:
   - "Check the Kubernetes state of {service}: pod status, restarts, recent events."
   - "Collect logs from {service} for the time around {started_at}; add a sample as a note on the Opsgenie alert."
   - "Test {service} yourself as a customer would (call the affected endpoint) and record the result."
-  - "Check code, deploy and config changes to {service} in the hours before {started_at}."
-  - "Check whether planned maintenance or a change window covers {service} or its dependencies."
 
 alerts:
   HighErrorRate:

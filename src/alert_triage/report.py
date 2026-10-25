@@ -17,7 +17,7 @@ LEGEND = [
         "in 15 min.",
     ),
     ("P3", "Prod, internal service. Alert to EOC on-call, no page."),
-    ("P4", "Non-prod (staging). Alert to EOC on-call, no page."),
+    ("P4", "Non-prod (staging). Alert to the owning team, no page."),
     ("review", "The rules cannot decide. A person looks at it; nothing is guessed."),
     (
         "rejected",

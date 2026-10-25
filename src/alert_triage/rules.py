@@ -7,9 +7,9 @@ THRESHOLD_ALERTS = ("HighErrorRate", "HighLatency")
 OUTAGE_ALERTS = ("ServiceDown", "DependencyDown")
 PROD_ENVIRONMENTS = ("prod",)
 
-# Every alert goes to the EOC on-call first; only P1/P2 page. If a P1/P2 is not acknowledged in
-# time, Opsgenie escalates to the service's escalation contact. Any other escalation is the
-# on-call person's decision.
+# Production alerts go to the EOC on-call first; only P1/P2 page. If a P1/P2 is not acknowledged
+# in time, Opsgenie escalates to the service's escalation contact. Any other escalation is the
+# on-call person's decision. Non-prod (P4) goes to the owning team: EOC covers production.
 EOC_ONCALL = "eoc-oncall"
 ACK_TIMEOUT_MINUTES = {Priority.P1: 5, Priority.P2: 15}
 PAGED_PRIORITIES = tuple(ACK_TIMEOUT_MINUTES)
@@ -49,7 +49,7 @@ def classify(alert: Alert, catalog: dict[str, Service]) -> TriageResult:
         impact=_impact(alert, priority),
         owner=service.owner,
         escalation=service.escalation,
-        responder=EOC_ONCALL,
+        responder=service.owner if priority == Priority.P4 else EOC_ONCALL,
         ack_timeout_minutes=ACK_TIMEOUT_MINUTES.get(priority),
         page=priority in PAGED_PRIORITIES,
         reasons=[reason],

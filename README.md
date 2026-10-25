@@ -102,7 +102,7 @@ docker run --rm -v "$PWD/examples:/work/examples:ro" alert-triage:local \
 | | `a-1002`, 0.08 | **duplicate** of OG-0001, no new work | same name + service + environment still open |
 | | `a-1003`, 0.15 | **duplicate**, OG-0001 raised from P2 to P1, pages again | 3x threshold is P1; a worse repeat must not stay hidden |
 | `05-internal` | ServiceDown, report-builder prod | **P3**, OG-0004 to EOC on-call, no page | prod but internal; no customer impact expected |
-| `06-staging` | ServiceDown, search-api staging | **P4**, OG-0005 to EOC on-call, no page | non-prod, even for an outage |
+| `06-staging` | ServiceDown, search-api staging | **P4**, OG-0005 to the owning team (`discovery-team`), no page | non-prod, even for an outage |
 | `07-unknown-service` | HighErrorRate, loyalty-points prod | **manual_review**, OG-0006 to `eoc-triage` | service not in the catalog: no owner, no runbook, so no guessing |
 | `08-malformed` | missing service, bad time, text value | **rejected**, OG-0007 to `eoc-triage` + dead letter | validation: all three errors reported at once; it may still be a real alert, so a person checks it |
 | `09-not-json` | truncated file | **rejected**, OG-0008 to `eoc-triage` + dead letter | file cannot be parsed; the raw text goes in the Opsgenie alert and the rest of the batch continues |
@@ -146,19 +146,20 @@ checklist:
      what: 7% of checkout requests return 5xx over the last 5 minutes
      impact: Customers likely affected: checkout-api is customer-facing in prod (HighErrorRate: some requests fail).
      why: prod, customer-facing, HighErrorRate above threshold; opened OG-0001
+     goes to: eoc-oncall
      pages eoc-oncall; not acknowledged in 15 min -> Opsgenie escalates to payments-oncall-lead
      escalate when the runbook says so: payments-oncall-lead
      checklist:
        1. Acknowledge Opsgenie alert OG-0001 so others know it is being handled. Do it within 15 minutes: after that Opsgenie escalates it automatically to payments-oncall-lead.
        2. Read the alert: priority P2, what happened, service checkout-api, environment prod.
        3. Check customer impact: is checkout-api in prod failing for users right now?
-       4. Open the runbook before changing anything: https://runbooks.example.com/checkout-api
-       5. Save the relevant Grafana dashboard panels (traffic, errors, latency) for the time around 2026-10-21T08:00:00+00:00.
-       6. Check the Kubernetes state of checkout-api: pod status, restarts, recent events.
-       7. Collect logs from checkout-api for the time around 2026-10-21T08:00:00+00:00; add a sample as a note on the Opsgenie alert.
-       8. Test checkout-api yourself as a customer would (call the affected endpoint) and record the result.
-       9. Check code, deploy and config changes to checkout-api in the hours before 2026-10-21T08:00:00+00:00.
-       10. Check whether planned maintenance or a change window covers checkout-api or its dependencies.
+       4. Check whether planned maintenance or a change window covers checkout-api or its dependencies. If it does, confirm with the owner of that work that this impact is expected and add a note on the Opsgenie alert; if the impact is larger than planned, treat it as an incident.
+       5. Check code, deploy and config changes to checkout-api in the hours before 2026-10-21T08:00:00+00:00.
+       6. Open the runbook before changing anything: https://runbooks.example.com/checkout-api
+       7. Save the relevant Grafana dashboard panels (traffic, errors, latency) for the time around 2026-10-21T08:00:00+00:00.
+       8. Check the Kubernetes state of checkout-api: pod status, restarts, recent events.
+       9. Collect logs from checkout-api for the time around 2026-10-21T08:00:00+00:00; add a sample as a note on the Opsgenie alert.
+       10. Test checkout-api yourself as a customer would (call the affected endpoint) and record the result.
        11. Note the error rate (0.07 vs threshold 0.05) and group errors by endpoint and status code.
        12. Check the dependencies listed in the runbook for errors at the same time.
        13. Only do steps the runbook gives to the on-call / EOC role. If a step belongs to another team (for example engineers restart the service), escalate to them instead of doing it yourself.
@@ -170,6 +171,7 @@ checklist:
      what: errors on a service nobody added to the catalog
      impact: Unknown: the rules cannot decide (see why); assess impact by hand.
      why: service 'loyalty-points' is not in the catalog; opened OG-0006
+     goes to: eoc-triage
      checklist:
        1. Do not change anything yet. Confirm the alert is real by checking the monitor that sent it.
        2. Find the owner of 'loyalty-points': search the service inventory, ask in the EOC channel.
@@ -281,15 +283,18 @@ Evaluated in this order; the first rule that applies wins. Code: `src/alert_tria
 | P1 | prod, customer-facing, and `ServiceDown`, `DependencyDown`, or error rate at least 2x threshold | Opsgenie alert to EOC on-call, pages; open an incident | only if not acknowledged in 5 min |
 | P2 | prod, customer-facing, any other known alert | Opsgenie alert to EOC on-call, pages | only if not acknowledged in 15 min |
 | P3 | prod, internal service (not customer-facing) | Opsgenie alert to EOC on-call, no page | none |
-| P4 | any non-prod environment (staging) | Opsgenie alert to EOC on-call, no page | none |
+| P4 | any non-prod environment (staging) | Opsgenie alert to the owning team, no page | none |
 
 Opsgenie also uses P1 to P5, so the priority is passed through unchanged.
 
-**First response is always EOC.** Every alert, whatever its priority, goes to the EOC on-call;
-the service team is the `owner` on the alert and the place to escalate to. What differs is how
-loudly EOC is told: `page: true` (P1/P2) means the alert is expected to wake someone up. The
-channel itself (phone, SMS, push, email) comes from each engineer's Opsgenie notification rules,
-so P3/P4 arrive quietly, as push or email, unless someone chooses otherwise.
+**First response in production is EOC.** Every production alert, whatever its priority, goes to
+the EOC on-call; the service team is the `owner` on the alert and the place to escalate to. This
+matches how an EOC is usually defined: first responder for customer-facing production. Non-prod
+(P4) goes to the owning team instead, because staging is the development teams' environment and
+not something a 24x7 production team should be woken or distracted by. What differs between
+priorities is how loudly EOC is told: `page: true` (P1/P2) means the alert is expected to wake
+someone up. The channel itself (phone, SMS, push, email) comes from each engineer's Opsgenie
+notification rules, so P3 arrives quietly, as push or email.
 
 **Escalation.** The EOC on-call engineer investigates. Escalating to
 the service team (`escalation` in the catalog) is that engineer's decision, when the runbook says
@@ -311,11 +316,13 @@ The order is deliberate:
 
 1. Acknowledge the Opsgenie alert first: it stops the escalation timer and tells others someone
    is on it. Paged alerts also say how long there is before Opsgenie escalates.
-2. Read the alert, check impact (customers in prod; "who is blocked" in non-prod), then open the
-   runbook before changing anything.
-3. Collect evidence for every alert type: dashboards, Kubernetes state, logs, test as a customer,
-   changes in the hours before the alert started, planned maintenance. Then the evidence specific
-   to the alert type.
+2. Read the alert and check impact (customers in prod; "who is blocked" in non-prod). Then rule
+   out the quickest explanations: planned maintenance or a change window (confirmed with whoever
+   runs it, because an alert during maintenance means either a missing silence or more impact
+   than planned), and code, deploy or config changes in the hours before the alert started, the
+   most common cause. Then open the runbook before changing anything.
+3. Collect evidence for every alert type: dashboards, Kubernetes state, logs, test as a customer.
+   Then the evidence specific to the alert type.
 4. Guardrail: only steps the runbook gives to the on-call role; other teams' steps are escalated.
 5. Mitigation from the runbook.
 6. Escalation when the runbook says so or it cannot be mitigated, with the evidence already
@@ -364,7 +371,7 @@ producing an incomplete checklist.
 make test
 ```
 
-94 tests, no network, each with a temporary state and outbox:
+95 tests, no network, each with a temporary state and outbox:
 
 | Area | File | Examples |
 |---|---|---|
@@ -433,8 +440,9 @@ so "why did this page at 3 a.m.?" has an exact answer.
 
 - Opsgenie is the alerting and paging tool. The exercise asks for "notifications or ticket
   creation", so there is no separate ticketing system: the Opsgenie alert is the unit of work.
-- EOC does first response for every alert, so all priorities go to the EOC on-call (`eoc-oncall`);
-  only P1/P2 page. The owning team is escalated to by EOC when it cannot fix or troubleshoot it.
+- EOC does first response for every production alert (P1 to P3) on `eoc-oncall`; only P1/P2
+  page. The owning team is escalated to by EOC when it cannot fix or troubleshoot it. Staging
+  alerts (P4) go straight to the owning team, without a page.
 - Manual-review and rejected items go to a single EOC triage team (`eoc-triage`), since the owner
   may be unknown.
 - A threshold alert without numbers is incomplete data (manual review), not malformed input,

@@ -168,6 +168,7 @@ def _as_text(results, counts, needs_review) -> str:
                 lines.append(f"     what: {r.description}")
             lines.append(f"     impact: {r.impact}")
             lines.append(f"     why: {'; '.join(r.reasons)}")
+            lines.append(f"     goes to: {r.responder}")
             if r.ack_timeout_minutes:
                 lines.append(
                     f"     pages {r.responder}; not acknowledged in {r.ack_timeout_minutes} min"

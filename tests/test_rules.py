@@ -55,6 +55,7 @@ def test_staging_is_p4_even_for_an_outage(alert_data, catalog):
     result = triage(alert_data, catalog, environment="staging", name="ServiceDown")
     assert result.priority == Priority.P4
     assert result.page is False
+    assert result.responder == "payments-team"
 
 
 def test_unknown_service_goes_to_manual_review(alert_data, catalog):
